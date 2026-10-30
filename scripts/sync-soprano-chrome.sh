@@ -40,7 +40,6 @@ files=(
     "Sources/Soprano/Utilities/AppVersion.swift|Sources/SopranoAgents/Vendored/AppVersion.swift"
     "Sources/Soprano/Views/CodeSyntaxHighlighter.swift|Sources/SopranoAgents/Vendored/CodeSyntaxHighlighter.swift"
     "Sources/Soprano/App/MainWindowSizing.swift|Sources/SopranoAgents/Vendored/MainWindowSizing.swift"
-    "Sources/Soprano/Views/AgentMarkdownRenderer.swift|Sources/SopranoAgents/Vendored/AgentMarkdownRenderer.swift"
 )
 
 staging="$(mktemp -d)"

@@ -65,7 +65,8 @@ spec, harness. Keep it current when a seam, binding, or harness option changes.
   provider drivers/sessions (Codex app-server, Claude stream-json), git (`GitRunner`,
   `LiveGitService`: checkpoints, diffs, worktrees, commit/push/PR), JSON-file store.
 - `Sources/SopranoAgents/Theme/` — `Palette` (T3 Code tokens), typography, metrics, shared controls.
-- `Sources/SopranoAgents/Shell/`, `App/` — window, workspace layout, `WorkspaceState`, settings,
+- `Sources/SopranoAgents/Shell/`, `App/`, `Views/Palette/`, `Views/Settings/`, `Notifications/` —
+  window, workspace layout, `WorkspaceState`, settings,
   keymap/router, dialogs, palette, settings screen, notifications, snapshot harness.
 - `Sources/SopranoAgents/Views/{Sidebar,Chat,Timeline,Composer,Panels}` — the regions.
 - `Sources/SopranoAgents/Commands/` — `AppCommand` registry; every action is a command.

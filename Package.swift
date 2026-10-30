@@ -5,7 +5,7 @@ let package = Package(
     name: "SopranoAgents",
     platforms: [.macOS(.v14)],
     dependencies: [
-        // Same pin as Soprano: the vendored AgentMarkdownRenderer is written against it.
+        // Same pin as Soprano; the timeline's Markdown block model (MarkdownDocument) parses with it.
         .package(url: "https://github.com/swiftlang/swift-markdown.git", exact: "0.8.0"),
         // Terminal drawer: an AppKit terminal view over a local pseudo-terminal.
         .package(url: "https://github.com/migueldeicaza/SwiftTerm.git", exact: "1.20.0"),
