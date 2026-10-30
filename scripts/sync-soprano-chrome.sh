@@ -40,6 +40,17 @@ files=(
     "Sources/Soprano/Utilities/AppVersion.swift|Sources/SopranoAgents/Vendored/AppVersion.swift"
     "Sources/Soprano/Views/CodeSyntaxHighlighter.swift|Sources/SopranoAgents/Vendored/CodeSyntaxHighlighter.swift"
     "Sources/Soprano/App/MainWindowSizing.swift|Sources/SopranoAgents/Vendored/MainWindowSizing.swift"
+    "Sources/Soprano/Accounts/AccountFiles.swift|Sources/SopranoAgents/Vendored/Accounts/AccountFiles.swift"
+    "Sources/Soprano/Accounts/AccountLaunchState.swift|Sources/SopranoAgents/Vendored/Accounts/AccountLaunchState.swift"
+    "Sources/Soprano/Accounts/AccountModels.swift|Sources/SopranoAgents/Vendored/Accounts/AccountModels.swift"
+    "Sources/Soprano/Accounts/AccountState.swift|Sources/SopranoAgents/Vendored/Accounts/AccountState.swift"
+    "Sources/Soprano/Accounts/AccountsController.swift|Sources/SopranoAgents/Vendored/Accounts/AccountsController.swift"
+    "Sources/Soprano/Accounts/ClaudeCodeAccountManager.swift|Sources/SopranoAgents/Vendored/Accounts/ClaudeCodeAccountManager.swift"
+    "Sources/Soprano/Accounts/CodexAccountManager.swift|Sources/SopranoAgents/Vendored/Accounts/CodexAccountManager.swift"
+    "Sources/Soprano/Accounts/CommandRunner.swift|Sources/SopranoAgents/Vendored/Accounts/CommandRunner.swift"
+    "Sources/Soprano/Accounts/KeychainCLI.swift|Sources/SopranoAgents/Vendored/Accounts/KeychainCLI.swift"
+    "Sources/Soprano/Accounts/OmpAccountManager.swift|Sources/SopranoAgents/Vendored/Accounts/OmpAccountManager.swift"
+    "Sources/Soprano/Accounts/UsageAPI.swift|Sources/SopranoAgents/Vendored/Accounts/UsageAPI.swift"
 )
 
 staging="$(mktemp -d)"
