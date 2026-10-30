@@ -1,9 +1,9 @@
 # Soprano Agents
 
-Native macOS GUI for coding agents (Codex, Claude Code) in the Soprano family, with the feel and
-look of [T3 Code](https://github.com/pingdotgg/t3code): thread inbox, centered chat lane with a
-floating composer, collapsible work logs, approvals, per-turn diffs from hidden git checkpoints,
-worktrees, terminal drawer, right-panel diff. Swift 6 + programmatic AppKit (no
+Native macOS GUI for coding agents (omp, Codex, Claude Code) in the Soprano family, colored by
+Soprano's themes: thread inbox, centered chat lane with a floating composer, collapsible work logs,
+approvals, per-turn diffs from hidden git checkpoints, worktrees, terminal drawer, right-panel
+diff. Swift 6 + programmatic AppKit (no
 storyboards/xibs/SwiftUI), SPM, macOS 14+, drives the `omp` (default), `codex` and `claude` CLIs
 directly.
 Shipped as a hand-packaged `.app` via `scripts/package-app.sh`.
@@ -59,13 +59,13 @@ It replaces `/Applications/Soprano Agents.app` without restarting a running inst
 `docs/ARCHITECTURE.md` is the contract: module ownership, seams (engine, providers, git, UI
 state, commands, settings), provider wire protocols, keyboard model, default bindings, visual
 spec, harness. Keep it current when a seam, binding, or harness option changes.
-`docs/t3code-spec.md` is the T3 Code reference (layout, tokens, strings, protocols) the UI copies.
 `docs/ROADMAP.md` lists what is deliberately not built.
 
 - `Sources/SopranoAgentsCore/` — Foundation only: domain models, `AgentEngine` (state owner),
   provider drivers/sessions (Codex app-server, Claude stream-json), git (`GitRunner`,
   `LiveGitService`: checkpoints, diffs, worktrees, commit/push/PR), JSON-file store.
-- `Sources/SopranoAgents/Theme/` — `Palette` (T3 Code tokens), typography, metrics, shared controls.
+- `Sources/SopranoAgents/Theme/` — `Palette` (tokens derived from the Soprano theme), typography,
+  metrics, shared controls.
 - `Sources/SopranoAgents/Shell/`, `App/`, `Views/Palette/`, `Views/Settings/`, `Notifications/` —
   window, workspace layout, `WorkspaceState`, settings,
   keymap/router, dialogs, palette, settings screen, notifications, snapshot harness.
@@ -74,10 +74,9 @@ spec, harness. Keep it current when a seam, binding, or harness option changes.
 
 ## Conventions
 
-- Look is T3 Code's: colors only from `PaletteCenter.shared.palette` (`theme: "t3"` default,
-  Soprano themes map onto the same tokens), `Typography` roles, `Radius`, `Metrics`, SF Symbols via
-  `Icon`. Views subclass `PaletteView` and re-color in `applyPalette(_:)`. Strings copy T3 Code's
-  wording (spec) unless this app's behavior differs.
+- Colors only from `PaletteCenter.shared.palette`, derived from the Soprano theme in force
+  (`theme: "soprano"` default; never hardcode a palette), `Typography` roles, `Radius`, `Metrics`,
+  SF Symbols via `Icon`. Views subclass `PaletteView` and re-color in `applyPalette(_:)`.
 - Views never spawn processes, run git or talk to providers: everything goes through
   `AgentEngine`. UI state goes through `WorkspaceState`.
 - New actions: add an `AppCommand` to the owning module's `…Commands.all`, add its row to the
