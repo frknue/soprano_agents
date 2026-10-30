@@ -1,9 +1,9 @@
 // Renders a Soprano-family app icon (Folio "Paper") straight into an .iconset directory.
-// Usage: swift scripts/render-app-icon.swift <soprano|git|cast|tab> <iconset-dir>
+// Usage: swift scripts/render-app-icon.swift <soprano|git|cast|tab|agents> <iconset-dir>
 //
-// Single source for all four apps: Soprano owns this file, Soprano Agents / Cast / Tab vendor
-// it unchanged through scripts/sync-soprano-chrome.sh, and each repo's
-// scripts/render-app-icon.sh runs it and packs the result with `iconutil -c icns`.
+// Soprano Agents' own copy of Soprano's renderer (not synced by scripts/sync-soprano-chrome.sh):
+// it adds the `agents` glyph. scripts/render-app-icon.sh runs it and packs the result with
+// `iconutil -c icns`.
 //
 // The geometry and colours transcribe docs/design/2026-10-21-calm-family/b/icons/<app>.svg
 // (1024 viewBox): a paper ground (824 body on Apple's 100 px grid, vertical gradient
@@ -21,7 +21,7 @@
 import AppKit
 
 enum App: String, CaseIterable {
-    case soprano, git, cast, tab
+    case soprano, git, cast, tab, agents
 }
 
 // Folio Paper tokens (b/tokens.css --icon-*).
@@ -195,6 +195,27 @@ struct Pen {
         )
         paint(ctx, path, stroke: stroke, width: lineWidth)
     }
+
+    /// Speech bubble: a rounded body with a tail leaving its bottom edge between `tailBase`
+    /// (left x, right x) and pointing down-left to `tailTip`. Fill, then a centred stroke.
+    func bubble(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat, radius: CGFloat,
+                tailBase: (CGFloat, CGFloat), tailTip: (CGFloat, CGFloat),
+                fill: CGColor?, stroke: CGColor = Paper.ink, width: CGFloat = glyphStroke) {
+        let lineWidth = hintedWidth(width)
+        let o = offset(lineWidth)
+        let minX = snap(x, o), minY = snap(y, o), maxX = snap(x + w, o), maxY = snap(y + h, o)
+        let path = CGMutablePath()
+        path.move(to: CGPoint(x: minX + radius, y: minY))
+        path.addArc(tangent1End: CGPoint(x: maxX, y: minY), tangent2End: CGPoint(x: maxX, y: maxY), radius: radius)
+        path.addArc(tangent1End: CGPoint(x: maxX, y: maxY), tangent2End: CGPoint(x: minX, y: maxY), radius: radius)
+        path.addLine(to: CGPoint(x: snap(tailBase.1, o), y: maxY))
+        path.addLine(to: snap(tailTip, o))
+        path.addLine(to: CGPoint(x: snap(tailBase.0, o), y: maxY))
+        path.addArc(tangent1End: CGPoint(x: minX, y: maxY), tangent2End: CGPoint(x: minX, y: minY), radius: radius)
+        path.addArc(tangent1End: CGPoint(x: minX, y: minY), tangent2End: CGPoint(x: maxX, y: minY), radius: radius)
+        path.closeSubpath()
+        paint(ctx, path, fill: fill, stroke: stroke, width: lineWidth)
+    }
 }
 
 func drawGround(_ ctx: CGContext, scale: CGFloat) {
@@ -254,6 +275,12 @@ func drawGlyph(_ pen: Pen, app: App) {
         pen.line([(452, 584), (640, 584)], stroke: Paper.mark, width: 44)
         pen.line([(584, 528), (640, 584), (584, 640)], stroke: Paper.mark, width: 44)
         pen.line([(692, 520), (692, 648)], stroke: Paper.mark, width: 44)
+    case .agents:
+        // A speech bubble with a tail and three typing dots; the last dot is sienna.
+        pen.bubble(232, 264, 560, 400, radius: 128, tailBase: (360, 488), tailTip: (304, 784), fill: Paper.sheet)
+        pen.circle(392, 464, 44, fill: Paper.ink, stroke: nil)
+        pen.circle(512, 464, 44, fill: Paper.ink, stroke: nil)
+        pen.circle(632, 464, 44, fill: Paper.mark, stroke: nil)
     }
 }
 

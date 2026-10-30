@@ -1,6 +1,6 @@
 #!/bin/bash
-# Renders the Folio app icon with scripts/render-app-icon.swift (Soprano-owned, vendored by
-# scripts/sync-soprano-chrome.sh) and writes Sources/SopranoAgents/Resources/AppIcon.icns.
+# Renders the Soprano Agents app icon (the `agents` glyph of scripts/render-app-icon.swift, this
+# repo's own copy of Soprano's renderer) and writes Sources/SopranoAgents/Resources/AppIcon.icns.
 # Usage: render-app-icon.sh [png-output]
 # The optional argument keeps a copy of the 1024×1024 render at that path.
 set -euo pipefail
@@ -24,7 +24,7 @@ cleanup() {
 trap cleanup EXIT
 
 iconset="$work_dir/AppIcon.iconset"
-swift "$script_dir/render-app-icon.swift" git "$iconset"
+swift "$script_dir/render-app-icon.swift" agents "$iconset"
 
 staged_icns="$work_dir/AppIcon.icns"
 /usr/bin/iconutil -c icns -o "$staged_icns" "$iconset"
