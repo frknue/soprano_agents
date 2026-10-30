@@ -4,7 +4,8 @@ Native macOS GUI for coding agents (Codex, Claude Code) in the Soprano family, w
 look of [T3 Code](https://github.com/pingdotgg/t3code): thread inbox, centered chat lane with a
 floating composer, collapsible work logs, approvals, per-turn diffs from hidden git checkpoints,
 worktrees, terminal drawer, right-panel diff. Swift 6 + programmatic AppKit (no
-storyboards/xibs/SwiftUI), SPM, macOS 14+, drives the `codex` and `claude` CLIs directly.
+storyboards/xibs/SwiftUI), SPM, macOS 14+, drives the `omp` (default), `codex` and `claude` CLIs
+directly.
 Shipped as a hand-packaged `.app` via `scripts/package-app.sh`.
 
 ## Commands
@@ -33,7 +34,7 @@ formatter; match surrounding style.
   `./scripts/dev.sh` without `--build-only` unless the user asks.
 - Tests never start a real agent CLI, never touch the user's repositories, settings or app data.
   Provider parsing is tested against the recorded traces in `Tests/SopranoAgentsTests/Fixtures/`.
-- A live provider smoke test (real `codex app-server` / `claude` turn in a throwaway repo under
+- A live provider smoke test (real `omp --mode rpc-ui` / `codex app-server` / `claude` turn in a throwaway repo under
   `/tmp`) is fine for verifying provider changes; keep prompts tiny.
 
 ## Installing completed changes
@@ -97,5 +98,8 @@ spec, harness. Keep it current when a seam, binding, or harness option changes.
 - GUI apps start with a minimal PATH; provider and git runners extend it (`~/.local/bin`,
   `/opt/homebrew/bin`, `/usr/local/bin`, `~/.bun/bin`, `~/.cargo/bin`).
 - `codex app-server` sends server requests with numeric or string ids; answer with the same id.
+- omp's RPC (`omp://rpc.md` in an omp session) is JSONL, not JSON-RPC; after `negotiate_protocol`
+  v2, big responses (the model list) arrive as base64 `rpc_chunk` frames. Never pass `--no-ui`
+  with `rpc-ui`: approvals would then fail closed instead of reaching the app.
 - Signing reuses Soprano's "Soprano Local Development" identity and keychain.
 - Dev (`com.soprano.agents.dev`) and installed (`com.soprano.agents`) apps keep separate data.
