@@ -1,0 +1,21 @@
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+
+# macOS
+.DS_Store
+*.dSYM
+*.dSYM.zip
+
+# App bundles and installers
+*.app
+*.dmg
+*.pkg
+
+# Misc
+*.log
+.worktrees/
+
+# Personal working notes.
+docs/notes/
