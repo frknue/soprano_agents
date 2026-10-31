@@ -11,7 +11,7 @@ let package = Package(
         .package(url: "https://github.com/migueldeicaza/SwiftTerm.git", exact: "1.20.0"),
     ],
     targets: [
-        // Agent engine: provider sessions (Codex app-server, Claude Code), thread model,
+        // Agent engine: omp provider sessions (`omp --mode rpc-ui`), thread model,
         // persistence, git checkpoints and diffs. Foundation only, no AppKit.
         .target(
             name: "SopranoAgentsCore",
