@@ -126,6 +126,30 @@ All notable changes to Soprano Agents are documented here. The format follows
 
 ### Fixed
 
+- Git: committing works with an untracked nested repository that has no commits yet; a new
+  worktree whose submodules fail, or whose setup you stop or quit, is removed with its branch,
+  and a folder already used by another worktree is never touched; quit waits for that cleanup.
+  The commit dialog always lists the current changes of the thread you are on, and a double
+  click no longer starts a git action twice.
+- Quitting keeps the checkpoint of a turn the quit interrupted and never starts a queued
+  message; a message sent during Edit from here waits for the rewind instead of being deleted.
+- Closing a thread while its omp restarts no longer leaves an omp running; closed terminals no
+  longer leave zombie shells; helper processes no longer leak file descriptors or leave
+  children that ignore SIGTERM running.
+- The timeline lets you scroll away from a streaming answer, keeps an opened fold in view,
+  keeps the work shimmer running, keeps your text selection while a message streams, and no
+  longer keeps every streamed copy of a message in memory. Links in the chat open only `http`,
+  `https` and `mailto`.
+- The `/` menu keeps your highlighted command while the agent works; input-method composition
+  keeps its keys in the `/` menu and popovers; dropped folders are no longer copied as
+  attachments; ⌘'s swapped send action no longer sticks after switching apps; a question no
+  longer auto-advances on another thread.
+- A dialog raised while the window is minimized or hidden shows as a normal alert; a settings
+  file that could not be read clears its error once it reads again.
+- The diff no longer jumps back to a file you opened from a changed-files card; double-clicking
+  the title in a subagent view no longer starts a rename.
+- Return in an untouched settings field writes nothing, settled threads in search no longer
+  offer Settle, and statistics read `1M` rather than `1000k`.
 - The Dock badge no longer counts unread Done or Failed threads you settled: they kept the badge
   up with nothing to see in the inbox. A settled thread waiting on Approval or Input still counts.
 - Hover fills sit evenly around their content: the composer's effort chip ("High") no longer
