@@ -14,6 +14,18 @@ All notable changes to Soprano Agents are documented here. The format follows
   `ask` questions appear inline; every model omp knows is in the model picker (search with several
   words, e.g. `opus openrouter`), with omp's thinking levels as Reasoning. Set
   `providers.ompPath` if `omp` is not on `PATH`.
+- OpenCode threads next to omp: the model picker (⇧⌘M) has an agent column (omp π, OpenCode),
+  and picking an OpenCode model starts the thread on OpenCode; a thread keeps its agent once it
+  has messages. Soprano Agents works on OpenCode's own background service, so its sessions also
+  appear in the `opencode` TUI. OpenCode threads get everything omp threads do: inline file and
+  command approvals (Always allow this session; Decline lets the agent carry on, Cancel stops
+  it), its questions as answerable forms, live command output, edit diffs, subagents in the
+  sidebar (message or stop them), side questions, `/` commands and skills, `/compact`, Edit from
+  here, the context meter, and its variants as Reasoning. Settings: `agents.defaultProvider` and
+  `textGeneration.provider` (`omp` or `opencode`) choose the agent for new threads and for
+  titles, branch names and commit messages; `providers.opencodePath` if `opencode` is not on
+  `PATH`. Settings → Providers shows each agent's status. Statistics, Accounts and word
+  completion stay omp's.
 - Thread inbox sidebar: search (titles, branches, messages), project filter, Add project, New
   thread (⌘N, ⇧⌘N, ⌃⌘N), collapsible Pinned, Working, Blocked, Failed, Done and Idle sections
   at the top with live status pills (Working, Approval, Input, Failed, Done; reading a thread

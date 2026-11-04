@@ -1,10 +1,10 @@
 # Soprano Agents
 
-Native macOS GUI for the `omp` coding agent in the Soprano family, colored by Soprano's themes:
-thread inbox, centered chat lane with a floating composer, collapsible work logs, approvals,
-per-turn diffs from hidden git checkpoints, worktrees, terminal drawer, right-panel diff. Swift 6 +
-programmatic AppKit (no storyboards/xibs/SwiftUI), SPM, macOS 14+, drives the `omp` CLI
-(`omp --mode rpc-ui`) directly.
+Native macOS GUI for the `omp` and OpenCode coding agents in the Soprano family, colored by
+Soprano's themes: thread inbox, centered chat lane with a floating composer, collapsible work logs,
+approvals, per-turn diffs from hidden git checkpoints, worktrees, terminal drawer, right-panel
+diff. Swift 6 + programmatic AppKit (no storyboards/xibs/SwiftUI), SPM, macOS 14+, drives the
+`omp` CLI (`omp --mode rpc-ui`) directly and OpenCode over its background service's v2 HTTP API.
 Shipped as a hand-packaged `.app` via `scripts/package-app.sh`.
 
 ## Commands
@@ -33,8 +33,10 @@ formatter; match surrounding style.
   `./scripts/dev.sh` without `--build-only` unless the user asks.
 - Tests never start a real agent CLI, never touch the user's repositories, settings or app data.
   Provider parsing is tested against the recorded traces in `Tests/SopranoAgentsTests/Fixtures/`.
-- A live provider smoke test (real `omp --mode rpc-ui` turn in a throwaway repo under `/tmp`) is
-  fine for verifying provider changes; keep prompts tiny.
+- A live provider smoke test is fine for verifying provider changes: a real `omp --mode rpc-ui`
+  turn, or an OpenCode session on its background service, in a throwaway folder under `/tmp`
+  with a cheap model and tiny prompts. OpenCode's service is shared with the user's TUI: leave
+  it running (no `opencode service stop|restart`).
 
 ## Installing completed changes
 
@@ -61,7 +63,8 @@ spec, harness. Keep it current when a seam, binding, or harness option changes.
 `docs/ROADMAP.md` lists what is deliberately not built.
 
 - `Sources/SopranoAgentsCore/` — Foundation only: domain models, `AgentEngine` (state owner),
-  omp driver/session (`omp --mode rpc-ui`), git (`GitRunner`, `LiveGitService`: checkpoints,
+  omp driver/session (`omp --mode rpc-ui`), OpenCode driver/session (`Opencode*`: v2 HTTP API
+  and event stream on OpenCode's background service), git (`GitRunner`, `LiveGitService`: checkpoints,
   diffs, worktrees, commit/push/PR), JSON-file store.
 - `Sources/SopranoAgents/Theme/` — `Palette` (tokens derived from the Soprano theme), typography,
   metrics, shared controls.
@@ -94,7 +97,8 @@ spec, harness. Keep it current when a seam, binding, or harness option changes.
   (committed Soprano state only; source commit in `Vendored/SOPRANO_COMMIT`). Never edit it here.
   `scripts/render-app-icon.swift` is this repo's own copy (adds the `agents` glyph); not synced.
 - GUI apps start with a minimal PATH; provider and git runners extend it (`~/.local/bin`,
-  `/opt/homebrew/bin`, `/usr/local/bin`, `~/.bun/bin`, `~/.cargo/bin`).
+  `/opt/homebrew/bin`, `/usr/local/bin`, `~/.bun/bin`, `~/.cargo/bin`, `~/.npm-global/bin`,
+  `~/.opencode/bin`; `ExecutableLocator.toolDirectories`).
 - omp's RPC (`omp://rpc.md` in an omp session) is JSONL, not JSON-RPC; after `negotiate_protocol`
   v2, big responses (the model list) arrive as base64 `rpc_chunk` frames. Never pass `--no-ui`
   with `rpc-ui`: approvals would then fail closed instead of reaching the app.

@@ -16,9 +16,9 @@ struct SettingsTests {
         // comment
         {
           "theme": "folio-ink",
-          "agents": { "defaultModel": "anthropic/claude-sonnet-5-5", "defaultRuntimeMode": "approval-required" },
-          "providers": { "ompPath": "~/.bun/bin/omp" },
-          "textGeneration": { "model": "anthropic/claude-haiku-5-5", "titles": false },
+          "agents": { "defaultProvider": "opencode", "defaultModel": "claude-agent/opus", "defaultRuntimeMode": "approval-required" },
+          "providers": { "ompPath": "~/.bun/bin/omp", "opencodePath": "~/.opencode/bin/opencode" },
+          "textGeneration": { "provider": "opencode", "model": "anthropic/claude-haiku-5-5", "titles": false },
           "worktrees": { "directory": "~/worktrees", "branchPrefix": "agent" },
           "chat": { "followUp": "queue", "width": "wide" },
           "notifications": { "enabled": false, "sound": false },
@@ -29,9 +29,12 @@ struct SettingsTests {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         var expected = AppSettings()
         expected.theme = "folio-ink"
-        expected.defaultModel = "anthropic/claude-sonnet-5-5"
+        expected.defaultProvider = .opencode
+        expected.defaultModel = "claude-agent/opus"
         expected.defaultRuntimeMode = .approvalRequired
         expected.ompPath = home + "/.bun/bin/omp"
+        expected.opencodePath = home + "/.opencode/bin/opencode"
+        expected.textGenerationProvider = .opencode
         expected.textGenerationModel = "anthropic/claude-haiku-5-5"
         expected.generateTitles = false
         expected.worktreesDirectory = home + "/worktrees"
@@ -55,6 +58,7 @@ struct SettingsTests {
         {
           "theme": "neon",
           "agents": { "defaultProvider": "gemini", "defaultRuntimeMode": "yolo" },
+          "textGeneration": { "provider": "codex" },
           "chat": { "followUp": "later", "width": 3 },
           "worktrees": { "directory": "relative/path", "branchPrefix": "has space" },
           "notifications": { "enabled": "yes" },
@@ -66,7 +70,9 @@ struct SettingsTests {
         #expect(resolved.keybindings.prefixKey == "a")
         #expect(resolved.keybindings.prefixTimeoutMs == 300)
         #expect(resolved.keybindings.overrides.isEmpty)
-        #expect(resolved.issues.count == 12)
+        #expect(resolved.issues.count == 13)
+        #expect(resolved.issues.map(\.message).contains("agents.defaultProvider must be \"omp\" or \"opencode\"."))
+        #expect(resolved.issues.map(\.message).contains("textGeneration.provider must be \"omp\" or \"opencode\"."))
         #expect(resolved.issues.allSatisfy { $0.severity == .warning })
     }
 
@@ -93,25 +99,34 @@ struct SettingsTests {
         #expect(resolved.keybindings == KeybindingSettings())
     }
 
-    @Test func engineSettingsRunEverythingOnOmp() {
+    @Test func engineSettingsCarryTheChosenProviders() {
         let defaults = AppSettings.defaults.engineSettings
-        #expect(defaults.defaultModel == ModelSelection(provider: .omp, model: ModelSelection.ompDefaultModel))
+        #expect(defaults.defaultModel == ModelSelection(provider: .omp, model: ModelSelection.configuredDefaultModel))
         #expect(defaults.defaultRuntimeMode == .fullAccess)
-        #expect(defaults.textGenerationModel == ModelSelection(provider: .omp, model: ModelSelection.ompDefaultModel))
+        #expect(defaults.textGenerationModel == ModelSelection(provider: .omp, model: ModelSelection.configuredDefaultModel))
         #expect(defaults.branchPrefix == "soprano")
         #expect(defaults.generateTitles)
         #expect(defaults.ompPath == nil)
+        #expect(defaults.opencodePath == nil)
 
         var settings = AppSettings()
-        settings.defaultModel = "anthropic/claude-opus-5-5"
+        settings.defaultProvider = .opencode
         settings.textGenerationModel = "anthropic/claude-haiku-5-5"
         settings.ompPath = "/usr/local/bin/omp"
+        settings.opencodePath = "/usr/local/bin/opencode"
         settings.generateTitles = false
         let mapped = settings.engineSettings
-        #expect(mapped.defaultModel == ModelSelection(provider: .omp, model: "anthropic/claude-opus-5-5"))
+        #expect(mapped.defaultModel == ModelSelection(provider: .opencode, model: ModelSelection.configuredDefaultModel))
         #expect(mapped.textGenerationModel == ModelSelection(provider: .omp, model: "anthropic/claude-haiku-5-5"))
         #expect(mapped.ompPath == "/usr/local/bin/omp")
+        #expect(mapped.opencodePath == "/usr/local/bin/opencode")
         #expect(!mapped.generateTitles)
+
+        settings.defaultModel = "claude-agent/opus"
+        settings.textGenerationProvider = .opencode
+        settings.textGenerationModel = nil
+        #expect(settings.engineSettings.defaultModel == ModelSelection(provider: .opencode, model: "claude-agent/opus"))
+        #expect(settings.engineSettings.textGenerationModel == ModelSelection(provider: .opencode, model: ModelSelection.configuredDefaultModel))
     }
 
     @Test func theFileIsCreatedFromTheTemplateOnFirstStart() throws {
@@ -228,6 +243,25 @@ struct SettingsTests {
         #expect(center.settings.ompPath == nil)
         #expect(center.keybindingSettings.overrides.isEmpty)
         #expect(center.configuredValue(at: ["providers", "ompPath"]) == nil)
+    }
+
+    @Test func resettingAnAgentAlsoDropsItsModel() throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("settings.json")
+        try #"{ "agents": { "defaultProvider": "opencode", "defaultModel": "claude-agent/opus" }, "textGeneration": { "provider": "opencode", "model": "claude-agent/haiku" } }"#
+            .write(to: url, atomically: true, encoding: .utf8)
+        let center = SettingsCenter(fileURL: url, registry: CommandRegistry())
+        center.start(watching: false)
+
+        for path in SettingsController.resetPaths(["agents", "defaultProvider"]) + SettingsController.resetPaths(["textGeneration", "provider"]) {
+            center.remove(at: path)
+        }
+
+        // An OpenCode model id never ends up on omp.
+        #expect(center.settings.engineSettings.defaultModel == .default(for: .omp))
+        #expect(center.settings.engineSettings.textGenerationModel == .default(for: .omp))
+        #expect(SettingsController.resetPaths(["agents", "defaultRuntimeMode"]) == [["agents", "defaultRuntimeMode"]])
     }
 
     @Test func aWriteEditsTheFileOnDiskEvenBeforeAHandEditWasReloaded() throws {

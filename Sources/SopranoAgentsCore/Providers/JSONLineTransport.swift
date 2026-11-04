@@ -31,7 +31,7 @@ extension JSONValue {
     }
 }
 
-/// Prompt text sent to omp.
+/// Prompt text sent to the agent CLIs, and the reading of structured answers.
 enum ProviderPrompt {
     /// Message text with attachment paths: every attachment is listed after the
     /// text as `[Attached image "shot.png" is saved at: /path]`, so the agent can open it even
@@ -43,5 +43,51 @@ enum ProviderPrompt {
             result = result.isEmpty ? context : "\(result)\n\n\(context)"
         }
         return result
+    }
+
+    // MARK: - Text generation
+
+    /// The generation prompt: the task, then the schema the answer must match.
+    static func generationPrompt(_ prompt: String, schema: JSONValue) -> String {
+        """
+        \(prompt)
+
+        Answer with only one JSON object that matches this JSON Schema. No prose, no Markdown fences.
+
+        \(schema.jsonString(sortedKeys: true))
+        """
+    }
+
+    /// The first JSON object in model output: Markdown fences are ignored and prose around the
+    /// object is skipped (string-aware brace matching).
+    static func firstJSONObject(in text: String) throws -> JSONValue {
+        let characters = Array(text)
+        var start = characters.startIndex
+        while let open = characters[start...].firstIndex(of: "{") {
+            var depth = 0
+            var inString = false
+            var escaped = false
+            var index = open
+            while index < characters.endIndex {
+                let character = characters[index]
+                if inString {
+                    if escaped { escaped = false } else if character == "\\" { escaped = true } else if character == "\"" { inString = false }
+                } else if character == "\"" {
+                    inString = true
+                } else if character == "{" {
+                    depth += 1
+                } else if character == "}" {
+                    depth -= 1
+                    if depth == 0 {
+                        let candidate = String(characters[open...index])
+                        if let value = try? JSONValue.parse(candidate), value.objectValue != nil { return value }
+                        break
+                    }
+                }
+                index += 1
+            }
+            start = open + 1
+        }
+        throw ProviderError.invalidOutput("The model did not return a JSON object.")
     }
 }

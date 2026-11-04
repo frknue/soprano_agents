@@ -116,9 +116,9 @@ enum SlashCommandFilter {
     }
 
     /// The muted single row when nothing can be listed.
-    static func emptyText(hasCandidates: Bool, query: String) -> String {
+    static func emptyText(provider: ProviderKind, hasCandidates: Bool, query: String) -> String {
         if hasCandidates { return "No commands match “/\(query)”" }
-        return "No commands from omp yet — they load once the session starts."
+        return "No commands from \(provider.displayName) yet — they load once the session starts."
     }
 }
 

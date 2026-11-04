@@ -1,15 +1,19 @@
 import Foundation
 
-/// Built-in model catalog: what the app offers before omp's first probe replaces it with omp's
-/// live catalog (`get_available_models`).
+/// Built-in model catalogs: what the app offers before a provider's first probe replaces it with
+/// the live catalog (omp `get_available_models`, OpenCode `GET /api/model`).
 public enum ProviderCatalog {
+    /// Before the first probe a provider offers only "its configured default".
     public static func fallback(_ kind: ProviderKind) -> [ProviderModel] {
-        switch kind {
-        case .omp: ompModels
-        }
+        [ProviderModel(slug: ModelSelection.configuredDefaultModel, name: defaultModelName(kind), isDefault: true)]
     }
 
-    /// Labels for omp's thinking levels.
+    /// "omp default", "OpenCode default": the CLI's configured model before its name is known.
+    public static func defaultModelName(_ kind: ProviderKind) -> String {
+        "\(kind.displayName) default"
+    }
+
+    /// Labels for thinking levels (omp) and model variants (OpenCode).
     public static func effortLabel(_ id: String) -> String {
         switch id {
         case "minimal": "Minimal"
@@ -32,19 +36,11 @@ public enum ProviderCatalog {
         )
     }
 
-    /// Before the first probe omp offers only "its configured default"; the probe replaces this
-    /// with omp's live catalog (`get_available_models`).
-    static let ompModels: [ProviderModel] = [
-        ProviderModel(slug: ModelSelection.ompDefaultModel, name: "omp default", isDefault: true),
-    ]
-
     /// Display name for a selection, falling back to the slug.
     public static func displayName(for selection: ModelSelection, in status: ProviderStatus?) -> String {
         if let model = (status?.models ?? fallback(selection.provider)).first(where: { $0.slug == selection.model }) {
             return model.name
         }
-        switch selection.provider {
-        case .omp: return selection.model == ModelSelection.ompDefaultModel ? "omp default" : selection.model
-        }
+        return selection.model == ModelSelection.configuredDefaultModel ? defaultModelName(selection.provider) : selection.model
     }
 }

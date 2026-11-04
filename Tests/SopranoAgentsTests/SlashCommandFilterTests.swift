@@ -62,7 +62,8 @@ struct SlashCommandFilterTests {
     }
 
     @Test func theEmptyRowSaysCommandsAreLoadingOrNamesTheUnmatchedQuery() {
-        #expect(SlashCommandFilter.emptyText(hasCandidates: false, query: "") == "No commands from omp yet — they load once the session starts.")
-        #expect(SlashCommandFilter.emptyText(hasCandidates: true, query: "zz") == "No commands match “/zz”")
+        #expect(SlashCommandFilter.emptyText(provider: .omp, hasCandidates: false, query: "") == "No commands from omp yet — they load once the session starts.")
+        #expect(SlashCommandFilter.emptyText(provider: .opencode, hasCandidates: false, query: "") == "No commands from OpenCode yet — they load once the session starts.")
+        #expect(SlashCommandFilter.emptyText(provider: .opencode, hasCandidates: true, query: "zz") == "No commands match “/zz”")
     }
 }

@@ -27,9 +27,11 @@ struct ExecutableLocatorTests {
         let home = try TempHome()
         let omp = try home.makeFile(".bun/bin/omp", executable: true)
         let node = try home.makeFile(".local/bin/node", executable: true)
+        let opencode = try home.makeFile(".opencode/bin/opencode", executable: true)
         let environment = ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin"]
         #expect(ExecutableLocator.locate("omp", environment: environment, home: home.path) == omp)
         #expect(ExecutableLocator.locate("node", environment: environment, home: home.path) == node)
+        #expect(ExecutableLocator.locate("opencode", environment: environment, home: home.path) == opencode)
     }
 
     @Test func theInheritedPathWinsAndNonExecutablesAreSkipped() throws {
@@ -58,7 +60,7 @@ struct ExecutableLocatorTests {
             home: "/Users/me",
             overrides: ["SOPRANO_TEST_OVERRIDE": "Soprano Agents"]
         )
-        #expect(environment["PATH"] == "/usr/bin:/opt/homebrew/bin:/Users/me/.local/bin:/usr/local/bin:/Users/me/.bun/bin:/Users/me/.cargo/bin:/Users/me/.npm-global/bin")
+        #expect(environment["PATH"] == "/usr/bin:/opt/homebrew/bin:/Users/me/.local/bin:/usr/local/bin:/Users/me/.bun/bin:/Users/me/.cargo/bin:/Users/me/.npm-global/bin:/Users/me/.opencode/bin")
         #expect(environment["HOME"] == "/Users/me")
         #expect(environment["SOPRANO_TEST_OVERRIDE"] == "Soprano Agents")
     }

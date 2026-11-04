@@ -258,7 +258,8 @@ enum SnapshotCommand {
                     in: window
                 )
             case "alert":
-                await Dialogs.alert(title: "Couldn’t start a new thread", message: "omp is unavailable: `omp` was not found on PATH.", in: window)
+                let agent = ProviderKind.opencode
+                await Dialogs.alert(title: "Couldn’t start a new thread", message: "\(agent.displayName) is unavailable: `\(agent.executableName)` was not found on PATH.", in: window)
             default:
                 _ = await Dialogs.confirm(
                     title: "Delete thread \"Fix SSO login redirect loop\"?",

@@ -79,8 +79,15 @@ enum SettingsResolver {
         }
 
         if let agents = section("agents", in: root, warn: warn) {
-            for key in agents.keys.sorted() where !["defaultModel", "defaultRuntimeMode"].contains(key) {
+            for key in agents.keys.sorted() where !["defaultProvider", "defaultModel", "defaultRuntimeMode"].contains(key) {
                 warn("Unknown setting \"agents.\(key)\".")
+            }
+            if let value = agents["defaultProvider"] {
+                if let provider = providerKind(value) {
+                    result.settings.defaultProvider = provider
+                } else {
+                    warn("agents.defaultProvider must be \(knownProviders).")
+                }
             }
             if let value = agents["defaultModel"] {
                 if let model = value as? String, !model.trimmingCharacters(in: .whitespaces).isEmpty {
@@ -100,15 +107,23 @@ enum SettingsResolver {
         }
 
         if let providers = section("providers", in: root, warn: warn) {
-            for key in providers.keys.sorted() where key != "ompPath" {
+            for key in providers.keys.sorted() where !["ompPath", "opencodePath"].contains(key) {
                 warn("Unknown setting \"providers.\(key)\".")
             }
             result.settings.ompPath = optionalPath(providers["ompPath"], key: "providers.ompPath", warn: warn) ?? result.settings.ompPath
+            result.settings.opencodePath = optionalPath(providers["opencodePath"], key: "providers.opencodePath", warn: warn) ?? result.settings.opencodePath
         }
 
         if let generation = section("textGeneration", in: root, warn: warn) {
-            for key in generation.keys.sorted() where !["model", "titles"].contains(key) {
+            for key in generation.keys.sorted() where !["provider", "model", "titles"].contains(key) {
                 warn("Unknown setting \"textGeneration.\(key)\".")
+            }
+            if let value = generation["provider"] {
+                if let provider = providerKind(value) {
+                    result.settings.textGenerationProvider = provider
+                } else {
+                    warn("textGeneration.provider must be \(knownProviders).")
+                }
             }
             if let value = generation["model"] {
                 if let model = value as? String, !model.isEmpty {
@@ -282,6 +297,16 @@ enum SettingsResolver {
             return nil
         }
         return object
+    }
+
+    private static func providerKind(_ value: Any) -> ProviderKind? {
+        (value as? String).flatMap(ProviderKind.init(rawValue:))
+    }
+
+    /// `"omp" or "opencode"`.
+    private static var knownProviders: String {
+        let names = ProviderKind.allCases.map { "\"\($0.rawValue)\"" }
+        return names.dropLast().joined(separator: ", ") + " or " + names.last!
     }
 
     private static func integer(_ value: Any) -> Int? {

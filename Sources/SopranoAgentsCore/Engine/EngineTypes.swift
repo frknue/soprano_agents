@@ -128,8 +128,9 @@ public struct EngineSettings: Sendable, Hashable {
     public var worktreesDirectory: String
     /// Generate thread titles with `textGenerationModel` after the first message.
     public var generateTitles: Bool
-    /// Executable override; nil = find `omp` on PATH.
+    /// Executable overrides; nil = find `omp` / `opencode` on PATH.
     public var ompPath: String?
+    public var opencodePath: String?
 
     public init(
         defaultModel: ModelSelection = .default(for: .omp),
@@ -138,7 +139,8 @@ public struct EngineSettings: Sendable, Hashable {
         branchPrefix: String = "soprano",
         worktreesDirectory: String = NSString(string: "~/.soprano-agents/worktrees").expandingTildeInPath,
         generateTitles: Bool = true,
-        ompPath: String? = nil
+        ompPath: String? = nil,
+        opencodePath: String? = nil
     ) {
         self.defaultModel = defaultModel
         self.defaultRuntimeMode = defaultRuntimeMode
@@ -147,6 +149,7 @@ public struct EngineSettings: Sendable, Hashable {
         self.worktreesDirectory = worktreesDirectory
         self.generateTitles = generateTitles
         self.ompPath = ompPath
+        self.opencodePath = opencodePath
     }
 }
 

@@ -1,10 +1,11 @@
 # Soprano Agents architecture
 
-Soprano Agents is a native macOS GUI for the `omp` coding agent (oh-my-pi) in the Soprano family,
-colored by Soprano's themes: a thread inbox on the left, a centered chat lane with a floating
-composer, collapsible work logs, per-turn diffs from hidden git checkpoints, a terminal drawer and
-a right panel. Swift 6 + programmatic AppKit (no SwiftUI, no storyboards), SPM, macOS 14+. The app
-talks to the `omp` CLI directly; there is no server process.
+Soprano Agents is a native macOS GUI for coding agents in the Soprano family, `omp` (oh-my-pi) and
+OpenCode, colored by Soprano's themes: a thread inbox on the left, a centered chat lane with a
+floating composer, collapsible work logs, per-turn diffs from hidden git checkpoints, a terminal
+drawer and a right panel. Swift 6 + programmatic AppKit (no SwiftUI, no storyboards), SPM, macOS
+14+. The app talks to the `omp` CLI directly and to OpenCode's own background service over its
+HTTP API; it runs no server of its own.
 
 ## Toolchain
 
@@ -23,7 +24,7 @@ swift test
 |---|---|---|
 | `Sources/SopranoAgentsCore/Models/` | Contract | Domain types: `Project`, `AgentThread`, `Turn`, `TurnItem(Kind)`, approvals, user input, `ModelSelection`, `ProviderStatus`, `ThreadStatus`/`InboxSection`, `DurationText`, `JSONValue`. Foundation only. |
 | `Sources/SopranoAgentsCore/Providers/ProviderSession.swift` | Contract | `ProviderDriver`, `ProviderSession`, `ProviderEvent`, `SessionConfig`, `TurnInput`. |
-| `Sources/SopranoAgentsCore/Providers/` (rest) | Providers | `LineProcess` (stdio JSON-lines transport), the omp driver, session, RPC client and event mapper, model catalog, `generateJSON`. |
+| `Sources/SopranoAgentsCore/Providers/` (rest) | Providers | `LineProcess` (stdio JSON-lines transport); the omp driver, session, RPC client and event mapper; the OpenCode driver, server connection (`OpencodeServer`), session, protocol and event mapper; model catalog, `generateJSON`. |
 | `Sources/SopranoAgentsCore/Engine/` | Engine | `AgentEngine` (state owner, observers, inbox lifecycle), `AgentEngine+Turns.swift` (sessions, sending, steering, queue, approvals, checkpoints, revert, diffs, titles, git actions), `AgentEngine+Files.swift` (workspace files) and `AgentEngine+Usage.swift` (usage history for the statistics board). `EngineTypes.swift` is contract. |
 | `Sources/SopranoAgentsCore/Files/` | Files | `WorkspaceFileService` (contract), `WorkspaceFileContent`, `WorkspaceFilePath` (the one escape check), `LiveWorkspaceFileService`. |
 | `Sources/SopranoAgentsCore/Usage/UsageStatistics.swift` | Contract | `UsageStatisticsService`, `UsagePeriod` (buckets), `UsageGroup`, `UsageTotals`, metric/part enums. |
@@ -87,7 +88,11 @@ Engine behavior:
   path from launch, so during setup or after a failed setup nothing falls back to the project root.
 - Turns recovered after a crash cancel their pending approvals and questions.
 - One `ProviderSession` per thread, created lazily on first send (resumes `providerThreadID`
-  after relaunch), closed on delete/shutdown. Provider events fold into the open turn
+  after relaunch), closed on delete/shutdown. A thread runs on the provider of its
+  `modelSelection`; `setModelSelection` with another provider forgets `providerThreadID` and
+  `contextUsage`, and the next send closes the old provider's session and starts the new one's
+  (the composer only offers that while the thread has no turns). Commands are kept per provider.
+  Provider events fold into the open turn
   (`AgentThread.openTurn`, the last turn while `.running`): `itemUpdated` replaces by id, deltas
   append, approvals/user input become items, `turnCompleted` finishes the turn and starts the
   next queued message. Items arriving without an open turn are dropped, except an `advisory`,
@@ -201,8 +206,9 @@ Engine behavior:
 ### Providers (Core/Providers)
 `ProviderDriver` creates `ProviderSession`s, probes the CLI (`probe()` → version, health,
 models), runs one-shot `generateJSON`, and lists commands without a conversation
-(`commands(directory:)`). `OmpDriver` is the only implementation and `ProviderKind` has the
-single case `.omp`; the seam keeps the engine testable against a fake driver.
+(`commands(directory:)`). `OmpDriver` and `OpencodeDriver` implement it, one per
+`ProviderKind` (`.omp`, `.opencode`; declaration order is display order); the seam keeps the
+engine testable against a fake driver.
 
 **omp** (oh-my-pi) — `omp --mode rpc-ui --cwd <cwd> --approval-mode <mode>
 [--model <provider/id>] [--thinking <level>] [--resume <session file>]`, one process per thread
@@ -214,7 +220,7 @@ omp's RPC (docs: `omp://rpc.md`) is JSONL, not JSON-RPC: commands `{id?, type, �
 build that rejects it keeps the `select`/`editor` fallback),
 `set_event_filter {messageUpdates:"delta"}`, `get_state` (its `sessionFile` is the thread's
 `providerThreadID`; a saved file that no longer exists starts fresh). Model slugs are
-`provider/id`; `default` (`ModelSelection.ompDefaultModel`) means omp's configured model (no
+`provider/id`; `default` (`ModelSelection.configuredDefaultModel`) means omp's configured model (no
 `--model`; after a `--resume`, which restores the session's saved model, `set_model` to the model
 a throwaway `omp --mode rpc --no-session` in the thread's folder reports). Model, thinking and
 fast-mode changes go to the live process (`set_model {provider, modelId}`, `set_thinking_level`,
@@ -311,10 +317,80 @@ the old tip. No Plan mode (omp's RPC has no plan-mode switch). Probe:
 `omp --version` plus a short-lived `omp --mode rpc --no-session --no-extensions --no-skills
 --no-rules --no-lsp` for `get_state` and `get_available_models` (≈730 models: first `default`
 named "<model> · configured", then "<name> · <provider>", effort = "off" + `thinking.efforts`).
-The composer's model list shows the first 80 matches of a multi-word search plus a "N more" row.
+The composer's model picker has an agent column (omp π, OpenCode's mark; `ProviderGlyph`) and
+shows the first 80 matches of a multi-word search plus a "N more" row per agent. Picking another
+agent's model switches a draft or a thread without turns (`ModelChoice.lockedProvider`); a thread
+with turns keeps its agent.
 Traces: `Tests/SopranoAgentsTests/Fixtures/omp-ask-write-edit-bash.jsonl`, `omp-builtin-yield.jsonl`
 (`/context`, then an async bash job that yields, wakes the agent and settles), `omp-subagent.jsonl`
 (a detached `sonic` subagent steered mid-run that gets a background-job notice and completes).
+
+**OpenCode** — OpenCode 2.x's v2 HTTP API (`GET /openapi.json` on the server describes it) on
+OpenCode's background service (`opencode serve --service`), the server the `opencode` TUI and CLI
+share, so a thread's session also shows up there (path from `EngineSettings.opencodePath` or
+PATH). `OpencodeServer` (one per driver) connects through the CLI, which finds the service and
+starts it when it is down: `opencode api server.info` (`urls[0]`), `opencode api server.pair` (a
+one-time code), redeemed at `GET <url>/auth/connect/<code>` for a token; requests send HTTP Basic
+`opencode:<token>`, and a 401 or a refused connection pairs again once. Errors become
+`ProviderError.rpc` with the server's `message`. `GET /api/event` is the server-sent event stream
+(`{type, data}` per `data:` line, first `server.connected`); `OpencodeTransport` is the seam the
+session tests fake. A folder OpenCode has not loaded yet answers empty lists for a moment, so
+`/api/command` and `/api/model` are asked again for up to 1.5 s.
+`OpencodeSession` per thread: open the stream, read `GET /api/model` + `/api/model/default`
+(context windows, the configured model), resume `providerThreadID` (`GET /api/session/{id}`, the
+`ses_…` id; 404 starts fresh) or `POST /api/session {location:{directory}, permissions, model}`.
+Model slugs are `providerID/modelID` (split at the first `/`), `default` = OpenCode's configured
+model; the effort option is the model's `variants` plus `default`. Before each turn the session
+switches in place: `POST …/model {model:{id, providerID, variant}}`, `PATCH …{permissions}`.
+Runtime mode → session permission rules (checked after the agent's own, last match wins):
+approval-required asks for `edit`, `shell`, `external_directory`; auto-accept-edits allows `edit`
+and asks for the other two; auto adds none; full-access allows `edit`, `shell`,
+`external_directory`, `read`, `webfetch`, `websearch` (configured denies stay). Turns: `POST
+…/prompt {text, files?, skills?}` (images as `file://` attachments, every path listed in the
+text), a listed slash command `POST …/command {name, text}`, `/skill:<id> …` a prompt with that
+skill attached. The session's next `session.inbox.enqueued` is the turn's user message: its id is
+the `providerTurnID`. `session.execution.succeeded|failed|interrupted` ends the turn; events while
+no turn of this app runs (another client driving the session) are ignored. Steer = `prompt
+{delivery:"steer"}`; Stop = `POST …/interrupt` (`interrupted:false`: nothing ran at that moment;
+after up to 1 s for a late end event, that same turn ends as interrupted, never a newer one).
+`close()` interrupts what runs and closes the stream; a `close()` while `start` or a turn's model
+and permission switch waits stops it there (no prompt is sent; a session created meanwhile is
+deleted). The stream's end is `sessionEnded`.
+Events (`OpencodeEventMapper`, item ids `<assistantMessageID>:text|reasoning:<ordinal>` and the
+tool call id): text/reasoning deltas and `…ended`; `session.tool.called|success|failed` → shell →
+command (`metadata.exit`; live output polled from `GET /api/shell/{shellID}/output?cursor=` twice a
+second once `session.tool.progress` names the shell), edit/write/patch → fileChange
+(`metadata.files[{file, patch, status}]` hunks; those paths are relative to OpenCode's project
+root, so a one-file tool's absolute input path names the file; while running the input's code via
+`OmpEditPreview`), read, glob/grep/list → search, websearch, subagent → subagent, todowrite →
+"Updated tasks", question → none; a `permission.rejected` failure is declined, `aborted`
+interrupted. `session.step.ended {finish, tokens}` → context fill (input + output + cache read +
+write against `limit.context`), `finish:"stop"` marks the text final; compaction/retry → notices.
+Approvals: `permission.asked` (of the session or a subagent's) → `approvalRequested` (shell and
+edit approvals show the tool call's whole command line or absolute path), answered at `POST
+/api/session/{owner}/permission/{id}/reply`: accept → `once`, acceptForSession → `always`,
+decline → `reject` with a message (the agent carries on), cancel → `reject` (stops the run and
+its other requests). Questions: `form.created` → `userInputRequested` (string/multiselect/
+boolean/number fields; hidden and external ones left out), `POST …/form/{id}/reply {answer}`
+(labels → option values), dismissed → `DELETE …/form/{id}`. `permission.replied`,
+`form.replied|cancelled` from elsewhere withdraw them; the turn's end withdraws the rest.
+Subagents: sessions created during a turn of this app with this one (or one of its subagents) as
+`parentID`, named by their
+`slug`; their events go through their own mapper (`session.inbox.enqueued` opens a run, the
+assignment's "You are a subagent…" preface dropped; the execution's end ends it, status
+completed/failed/aborted); the parent's `session.tool.progress {metadata.sessionID}` links the
+starting tool call. Messages → `POST /api/session/{child}/prompt {delivery:"steer"}`, Stop → its
+`interrupt`. A subagent a message woke after the turn keeps its live output; its approvals are
+declined and its questions cancelled (nobody would see them, as omp cancels such dialogs).
+Side questions: `POST …/generate {prompt}` (`OpencodeProtocol.sideQuestionPrompt`, follow-ups
+carry the topic's earlier exchanges); OpenCode keeps no side-question history, so the driver's
+`OpencodeSideQuestionStore` keeps this app run's topics per session id (a resumed session finds
+them). Rollback: `POST …/revert/stage {messageID, files:false}` then
+`POST …/revert/commit`. Probe: `opencode --version` plus the catalog (first `default` "<model> ·
+configured", then "<name> · <providerID>"; none → unauthenticated). Traces:
+`Fixtures/opencode-tool-turn.jsonl`, `opencode-edit-turn.jsonl`, `opencode-permission-turn.jsonl`
+(reject all), `opencode-decline-turn.jsonl`, `opencode-question-turn.jsonl`,
+`opencode-subagent-turn.jsonl`, `opencode-compaction.jsonl` (OpenCode 2.2.5).
 
 Context, compaction and commands:
 - omp: `get_available_commands` after the handshake, then `available_commands_update`
@@ -325,11 +401,17 @@ Context, compaction and commands:
   which gives the notice (committed / skip reason / cancelled) or an error; then `get_state` and
   `get_entries` (the compaction entry becomes the turn id). A skip ("Already compacted") is a
   failed response but the turn completes.
-- Traces: `omp-commands-compact.jsonl`.
+- OpenCode: `GET /api/command` (`/<name> `; names with `:` are MCP prompts) and `GET /api/skill`
+  (`/skill:<id> `) at start and after a turn once `command.updated`/`skill.updated` arrived.
+  `POST …/compact` runs as a turn (`session.compaction.ended` → notice, the compaction's inbox
+  id becomes the turn id); the context fill updates with the next step.
+- Traces: `omp-commands-compact.jsonl`, `opencode-compaction.jsonl`.
 
-Text generation: `omp -p --no-session --no-tools --no-extensions --no-skills --no-rules
+Text generation: omp `-p --no-session --no-tools --no-extensions --no-skills --no-rules
 --no-context-files --no-lsp [--model <provider/id>] --thinking low` (prompt plus schema on stdin,
-first JSON object of stdout). 180 s timeout.
+first JSON object of stdout); OpenCode `POST /api/experimental/generate/text {prompt, model?}`
+(no session, no tools; first JSON object of `data.text`). `textGeneration.provider` picks the
+agent. 180 s timeout.
 
 ### Accounts (`Vendored/Accounts`, `Views/Accounts`)
 Soprano's accounts layer is vendored unchanged. `AccountsController.shared.start()` runs only in
@@ -533,12 +615,15 @@ buttons, and the snapshot harness runs them with `--perform <id>`. `CommandConte
 
 ### Settings (`Shell/AppEnvironment.swift`, `SettingsResolution.swift`, `SettingsFile.swift`)
 `~/.config/soprano-agents/settings.json` (JSONC, `SOPRANO_AGENTS_CONFIG` overrides), live
-reloaded; bad values become warnings. Keys: `theme`, `agents.{defaultModel, defaultRuntimeMode}`,
-`providers.ompPath`, `textGeneration.{model, titles}`, `worktrees.{directory, branchPrefix}`, `projects.directories`,
+reloaded; bad values become warnings. Keys: `theme`, `agents.{defaultProvider, defaultModel,
+defaultRuntimeMode}`, `providers.{ompPath, opencodePath}`, `textGeneration.{provider, model,
+titles}`, `worktrees.{directory, branchPrefix}`, `projects.directories`,
 `chat.{followUp, width, workLog}`, `notifications.{enabled, sound}`, `editor.app`,
-`keybindings.{prefixKey, prefixTimeoutMs, bindings}`. `AppSettings.engineSettings` feeds
-`AgentEngine.settings`. Window geometry, panel
-widths and per-thread UI state stay in `UserDefaults`.
+`keybindings.{prefixKey, prefixTimeoutMs, bindings}`. `defaultProvider` /
+`textGeneration.provider` are `omp` or `opencode` (default omp); a model setting names a model of
+that agent, absent = that agent's configured model. `AppSettings.engineSettings` feeds
+`AgentEngine.settings`. Window geometry, panel widths and per-thread UI state stay in
+`UserDefaults`.
 
 ## Keyboard model
 
@@ -691,6 +776,9 @@ titlebar strip start a window drag offscreen instead; use them below the header.
 UI with it and `read` the PNG; they do not launch the GUI. `--work-log` overrides `chat.workLog`
 in memory (never `--perform timeline.toggleWorkLog`: that writes settings.json); the `editing`
 fixture is a running turn with an applied edit and a write whose code is still streaming in.
+The demo fixture also has an OpenCode status and one OpenCode thread ("Release checklist for
+2.4", pinned): `--perform thread.previous` five times, then `--perform modelPicker.toggle` shows
+the picker on it, with the omp tile locked because the thread has turns.
 
 The demo fixture's thread reports 124k of 200k context tokens and the engine remembers an omp
 command list for it and the `app` project: `--perform composer.focus --type "/re"` opens the

@@ -43,6 +43,7 @@ enum DemoFixtures {
         )
         let engine = AgentEngine(environment: environment)
         engine.setProviderStatus(ProviderStatus(kind: .omp, health: .ready, version: "18.14.0", models: ompModels))
+        engine.setProviderStatus(ProviderStatus(kind: .opencode, health: .ready, version: "2.2.5", models: opencodeModels))
         // The `/` menu's list for omp in the demo thread's worktree and in the app project (drafts).
         for directory in [demoWorktree, "/Users/demo/code/app"] {
             engine.rememberCommands(ompCommands, provider: .omp, workingDirectory: directory)
@@ -171,6 +172,7 @@ enum DemoFixtures {
     static let omp = ModelSelection(provider: .omp, model: "anthropic/claude-opus-5-5", options: [ModelOptionID.effort: "high"])
     static let sonnet = ModelSelection(provider: .omp, model: "anthropic/claude-sonnet-5-5", options: [ModelOptionID.effort: "medium"])
     static let sol = ModelSelection(provider: .omp, model: "openai-codex/gpt-6.1-sol", options: [ModelOptionID.effort: "high"])
+    static let opencode = ModelSelection(provider: .opencode, model: "openai/gpt-6.1-terra", options: [ModelOptionID.effort: "high"])
 
     /// A slice of omp's catalog as `get_available_models` reports it (`provider/id`, "<name> · <provider>").
     static let ompModels: [ProviderModel] = {
@@ -183,7 +185,21 @@ enum DemoFixtures {
             ("github-copilot/gpt-6-luna", "GPT-6 Luna · github-copilot"),
             ("openrouter/qwen/qwen3-coder", "Qwen3 Coder · openrouter"),
         ]
-        return [ProviderModel(slug: ModelSelection.ompDefaultModel, name: "Claude Opus 5.5 · configured", isDefault: true, options: [efforts])]
+        return [ProviderModel(slug: ModelSelection.configuredDefaultModel, name: "Claude Opus 5.5 · configured", isDefault: true, options: [efforts])]
+            + entries.map { ProviderModel(slug: $0.0, name: $0.1, options: [efforts]) }
+    }()
+
+    /// A slice of OpenCode's catalog as `GET /api/model` reports it (`providerID/modelID`,
+    /// "<name> · <provider>"), its variants as the effort option.
+    static let opencodeModels: [ProviderModel] = {
+        let efforts = ProviderCatalog.effortOption(["low", "medium", "high", "xhigh", "max"], default: "high")
+        let entries: [(String, String)] = [
+            ("claude-agent/opus", "Opus 5.5 · claude-agent"),
+            ("claude-agent/sonnet", "Sonnet 5.5 · claude-agent"),
+            ("openai/gpt-6.1-terra", "GPT-6.1 Terra · openai"),
+            ("openai/gpt-6-luna", "GPT-6 Luna · openai"),
+        ]
+        return [ProviderModel(slug: ModelSelection.configuredDefaultModel, name: "Opus 5.5 · configured", isDefault: true, options: [efforts])]
             + entries.map { ProviderModel(slug: $0.0, name: $0.1, options: [efforts]) }
     }()
 
@@ -311,13 +327,13 @@ enum DemoFixtures {
             )]
         ))
 
-        // 6. Pinned, unread completion (Done).
+        // 6. Pinned, unread completion (Done), run by OpenCode.
         result.append(AgentThread(
             id: ID.pinned, projectID: ID.app, title: "Release checklist for 2.4", createdAt: ago(86400 * 2), updatedAt: ago(7200),
-            modelSelection: sol, pinnedAt: ago(86400), lastVisitedAt: ago(86400),
+            modelSelection: opencode, pinnedAt: ago(86400), lastVisitedAt: ago(86400),
             turns: [Turn(
                 ordinal: 1, userMessage: UserMessage(text: "Draft the 2.4 release checklist.", createdAt: ago(7400)),
-                modelSelection: sol, status: .completed, startedAt: ago(7400), completedAt: ago(7200),
+                modelSelection: opencode, status: .completed, startedAt: ago(7400), completedAt: ago(7200),
                 items: [TurnItem(id: "rc1", kind: .assistantMessage(text: "Here's the checklist:\n\n- [ ] Bump versions\n- [ ] Changelog\n- [ ] Tag", isFinal: true), status: .completed)]
             )]
         ))

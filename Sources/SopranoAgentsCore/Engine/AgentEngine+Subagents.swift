@@ -57,12 +57,12 @@ extension AgentEngine {
                 }
             }
         case let .runStarted(message):
+            guard let thread = thread(threadID) else { return }
+            // The subagent runs on the provider whose session reported it.
+            let provider = runtime.existingThread(threadID)?.session?.kind ?? thread.modelSelection.provider
             mutateSubagent(threadID, name, create: true) { subagent in
                 Self.endRun(&subagent, status: .completed, error: nil, at: now)
-                let selection = ModelSelection(
-                    provider: thread(threadID)?.modelSelection.provider ?? .omp,
-                    model: subagent.model ?? ModelSelection.ompDefaultModel
-                )
+                let selection = ModelSelection(provider: provider, model: subagent.model ?? ModelSelection.configuredDefaultModel)
                 subagent.turns.append(Turn(
                     ordinal: subagent.turns.count + 1,
                     userMessage: UserMessage(text: message ?? subagent.assignment ?? "", createdAt: now),

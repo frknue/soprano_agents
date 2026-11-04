@@ -349,12 +349,12 @@ final class ComposerBadge: PaletteView {
     }
 }
 
-/// A 1 pt horizontal divider in `border` at 70%.
+/// A 1 pt divider in `border` at 70% (horizontal unless `vertical`).
 final class ComposerDivider: PaletteView {
-    init() {
+    init(vertical: Bool = false) {
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
-        heightAnchor.constraint(equalToConstant: 1).isActive = true
+        (vertical ? widthAnchor : heightAnchor).constraint(equalToConstant: 1).isActive = true
         applyPalette(palette)
     }
 

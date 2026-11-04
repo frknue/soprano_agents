@@ -284,9 +284,11 @@ extension AgentEngine {
         }
 
         // Rewind the provider to before the earliest turn from here on that it actually received
-        // (a turn stopped during startup or failed before sending has no native id). When none
-        // of them reached it, its conversation already ends here.
-        let anchor = thread.turns.first { $0.ordinal >= turn.ordinal && $0.providerTurnID != nil }
+        // (a turn stopped during startup, failed before sending, or run on another provider has
+        // no native id in this conversation). When none of them reached it, its conversation
+        // already ends here.
+        let provider = thread.modelSelection.provider
+        let anchor = thread.turns.first { $0.ordinal >= turn.ordinal && $0.providerTurnID != nil && $0.modelSelection.provider == provider }
         if thread.providerThreadID != nil, let anchor {
             let session: any ProviderSession
             do {

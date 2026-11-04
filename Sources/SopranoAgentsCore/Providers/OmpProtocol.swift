@@ -26,9 +26,9 @@ public enum OmpProtocol {
     }
 
     /// `provider/id` → (provider, id), split at the first `/` (ids may contain more slashes).
-    /// nil for `ModelSelection.ompDefaultModel` and malformed slugs.
+    /// nil for `ModelSelection.configuredDefaultModel` and malformed slugs.
     public static func modelSpec(_ slug: String) -> (provider: String, id: String)? {
-        guard slug != ModelSelection.ompDefaultModel, let slash = slug.firstIndex(of: "/") else { return nil }
+        guard slug != ModelSelection.configuredDefaultModel, let slash = slug.firstIndex(of: "/") else { return nil }
         let provider = String(slug[..<slash])
         let id = String(slug[slug.index(after: slash)...])
         guard !provider.isEmpty, !id.isEmpty else { return nil }
@@ -66,17 +66,6 @@ public enum OmpProtocol {
         if modelSpec(model) != nil { arguments += ["--model", model] }
         arguments += ["--thinking", "low"]
         return arguments
-    }
-
-    /// The generation prompt: the task, then the schema the answer must match.
-    public static func generationPrompt(_ prompt: String, schema: JSONValue) -> String {
-        """
-        \(prompt)
-
-        Answer with only one JSON object that matches this JSON Schema. No prose, no Markdown fences.
-
-        \(schema.jsonString(sortedKeys: true))
-        """
     }
 
     /// Environment for omp processes: the extended PATH plus the launch adjustments.
@@ -370,13 +359,13 @@ public enum OmpProtocol {
         if let current = state["model"], current.objectValue != nil {
             let name = current["name"]?.nonEmptyString ?? current["id"]?.stringValue ?? "omp default"
             models.append(ProviderModel(
-                slug: ModelSelection.ompDefaultModel,
+                slug: ModelSelection.configuredDefaultModel,
                 name: "\(name) · configured",
                 isDefault: true,
                 options: effortOptions(current, thinkingLevel: thinkingLevel)
             ))
         } else {
-            models.append(ProviderModel(slug: ModelSelection.ompDefaultModel, name: "omp default", isDefault: true))
+            models.append(ProviderModel(slug: ModelSelection.configuredDefaultModel, name: "omp default", isDefault: true))
         }
         for model in available["models"]?.arrayValue ?? [] {
             guard let provider = model["provider"]?.nonEmptyString, let id = model["id"]?.nonEmptyString else { continue }
@@ -399,41 +388,6 @@ public enum OmpProtocol {
             efforts[0]
         }
         return [ProviderCatalog.effortOption(choices, default: defaultID)]
-    }
-
-    // MARK: - Text generation
-
-    /// The first JSON object in model output: Markdown fences are ignored and prose around the
-    /// object is skipped (string-aware brace matching).
-    public static func firstJSONObject(in text: String) throws -> JSONValue {
-        let characters = Array(text)
-        var start = characters.startIndex
-        while let open = characters[start...].firstIndex(of: "{") {
-            var depth = 0
-            var inString = false
-            var escaped = false
-            var index = open
-            while index < characters.endIndex {
-                let character = characters[index]
-                if inString {
-                    if escaped { escaped = false } else if character == "\\" { escaped = true } else if character == "\"" { inString = false }
-                } else if character == "\"" {
-                    inString = true
-                } else if character == "{" {
-                    depth += 1
-                } else if character == "}" {
-                    depth -= 1
-                    if depth == 0 {
-                        let candidate = String(characters[open...index])
-                        if let value = try? JSONValue.parse(candidate), value.objectValue != nil { return value }
-                        break
-                    }
-                }
-                index += 1
-            }
-            start = open + 1
-        }
-        throw ProviderError.invalidOutput("The model did not return a JSON object.")
     }
 }
 

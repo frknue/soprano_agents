@@ -1,18 +1,32 @@
 import Foundation
 
-/// The agent CLI Soprano Agents drives: omp. One thread talks to exactly one provider.
+/// The agent CLIs Soprano Agents drives. One thread talks to exactly one provider.
+/// Declaration order is display order (model picker, settings): omp first.
 public enum ProviderKind: String, Codable, Sendable, CaseIterable, Hashable {
     /// `omp --mode rpc-ui` (oh-my-pi's JSONL RPC with host-rendered tool UI: approvals, `ask`).
     case omp
+    /// OpenCode's v2 HTTP API on its background service (`opencode serve --service`), with the
+    /// server-sent event stream.
+    case opencode
 
-    public var displayName: String { "omp" }
+    public var displayName: String {
+        switch self {
+        case .omp: "omp"
+        case .opencode: "OpenCode"
+        }
+    }
 
     /// The CLI's executable name.
-    public var executableName: String { "omp" }
+    public var executableName: String {
+        switch self {
+        case .omp: "omp"
+        case .opencode: "opencode"
+        }
+    }
 
-    /// Default chat model when omp's live catalog is not known yet:
-    /// `ModelSelection.ompDefaultModel`, whatever omp itself is configured to use.
-    public var defaultModel: String { ModelSelection.ompDefaultModel }
+    /// Default chat model before the live catalog is known:
+    /// `ModelSelection.configuredDefaultModel`, whatever the CLI itself is configured to use.
+    public var defaultModel: String { ModelSelection.configuredDefaultModel }
 }
 
 /// How much the agent may do without asking. Four modes with fixed labels.
@@ -177,9 +191,10 @@ public struct ModelSelection: Codable, Sendable, Hashable {
 }
 
 extension ModelSelection {
-    /// omp model id meaning "omp's own configured default" (no `--model`, no `set_model`).
-    /// Real omp models are `provider/id` (`anthropic/claude-opus-5-5`).
-    public static let ompDefaultModel = "default"
+    /// Model id meaning "the CLI's own configured default" (omp: no `--model`, no `set_model`;
+    /// OpenCode: the server's default model). Real models are `provider/id`
+    /// (`anthropic/claude-opus-5-5`, `claude-agent/opus`).
+    public static let configuredDefaultModel = "default"
 }
 
 public enum ModelOptionID {

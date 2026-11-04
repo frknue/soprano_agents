@@ -3,15 +3,24 @@ import SopranoAgentsCore
 
 // MARK: - Model picker
 
-/// The model picker: omp's searchable model list with the current model checked, the default
-/// badged, ⌘1–9 jumps and Enter to pick.
+/// The model picker: a 44 pt provider column (omp, OpenCode) and the shown provider's searchable
+/// model list with the current model checked, the default badged, ⌘1–9 jumps and Enter to pick.
 final class ModelPickerContent: ComposerPopoverContent {
-    private static let width: CGFloat = 360
+    /// The model list keeps 360 pt next to the 44 pt provider column.
+    private static let sidebarWidth: CGFloat = 44
+    private static let width: CGFloat = 360 + sidebarWidth
 
     private let selection: ModelSelection
-    private let status: ProviderStatus?
+    private let statuses: [ProviderKind: ProviderStatus]
+    /// Threads with turns keep their agent; drafts and turn-less threads may switch.
+    private let lockedProvider: ProviderKind?
     private let onSelect: (ModelSelection) -> Void
 
+    private var shownProvider: ProviderKind
+    private let sidebar = PaletteView()
+    private var tiles: [ProviderKind: ProviderTile] = [:]
+    private let indicator = PaletteView()
+    private var indicatorY: NSLayoutConstraint?
     private let listColumn = PaletteView()
     private let search = ComposerSearchField(placeholder: "Search models...")
     private let list = ComposerListView(maxHeight: 280, insets: NSEdgeInsets(top: 6, left: 8, bottom: 6, right: 4))
@@ -20,10 +29,15 @@ final class ModelPickerContent: ComposerPopoverContent {
     private let noticesBox = PaletteView()
     private var shownModels: [ProviderModel] = []
 
-    init(selection: ModelSelection, status: ProviderStatus?, onSelect: @escaping (ModelSelection) -> Void) {
+    /// - Parameters:
+    ///   - statuses: every provider's status; the column shows the selection's provider first.
+    ///   - lockedProvider: `ModelChoice.lockedProvider(of:)`; other agents' tiles are disabled.
+    init(selection: ModelSelection, statuses: [ProviderKind: ProviderStatus], lockedProvider: ProviderKind?, onSelect: @escaping (ModelSelection) -> Void) {
         self.selection = selection
-        self.status = status
+        self.statuses = statuses
+        self.lockedProvider = lockedProvider
         self.onSelect = onSelect
+        shownProvider = selection.provider
         super.init(frame: .zero)
         build()
         reload()
@@ -33,6 +47,33 @@ final class ModelPickerContent: ComposerPopoverContent {
     override var initialFocus: NSView? { search.field }
 
     private func build() {
+        let tileStack = NSStackView()
+        tileStack.orientation = .vertical
+        tileStack.spacing = 4
+        tileStack.edgeInsets = NSEdgeInsets(top: 4, left: 4, bottom: 4, right: 4)
+        for kind in ProviderKind.allCases {
+            let tile = ProviderTile(kind: kind)
+            // The current provider stays reachable even while it is unavailable.
+            if let reason = ModelChoice.lockReason(kind, lockedTo: lockedProvider) {
+                tile.isEnabled = false
+                tile.toolTip = reason
+            } else if kind != selection.provider, let reason = Self.unavailableReason(statuses[kind]) {
+                tile.isEnabled = false
+                tile.toolTip = reason
+            } else {
+                tile.toolTip = kind.displayName
+            }
+            tile.setAccessibilityLabel(tile.toolTip)
+            tile.onClick = { [weak self] in self?.showProvider(kind) }
+            tiles[kind] = tile
+            tileStack.addArrangedSubview(tile)
+        }
+        tileStack.translatesAutoresizingMaskIntoConstraints = false
+        sidebar.addSubview(tileStack)
+        indicator.layer?.cornerRadius = 1.5
+        indicator.translatesAutoresizingMaskIntoConstraints = false
+        sidebar.addSubview(indicator)
+
         notices.translatesAutoresizingMaskIntoConstraints = false
         noticesBox.addSubview(notices)
         let noticeLine = ComposerDivider()
@@ -42,18 +83,36 @@ final class ModelPickerContent: ComposerPopoverContent {
         let column = ComposerColumn([search, list, emptyLabel, noticesBox])
         column.setSpacing(4, after: search)
         listColumn.addSubview(column)
-        listColumn.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(listColumn)
+        for view in [sidebar, listColumn] {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            addSubview(view)
+        }
+        let separator = ComposerDivider(vertical: true)
+        listColumn.addSubview(separator)
         NSLayoutConstraint.activate([
-            listColumn.leadingAnchor.constraint(equalTo: leadingAnchor),
+            sidebar.leadingAnchor.constraint(equalTo: leadingAnchor),
+            sidebar.topAnchor.constraint(equalTo: topAnchor),
+            sidebar.bottomAnchor.constraint(equalTo: bottomAnchor),
+            sidebar.widthAnchor.constraint(equalToConstant: Self.sidebarWidth),
+            listColumn.leadingAnchor.constraint(equalTo: sidebar.trailingAnchor),
             listColumn.trailingAnchor.constraint(equalTo: trailingAnchor),
             listColumn.topAnchor.constraint(equalTo: topAnchor),
             listColumn.bottomAnchor.constraint(equalTo: bottomAnchor),
+            listColumn.heightAnchor.constraint(greaterThanOrEqualTo: tileStack.heightAnchor),
             widthAnchor.constraint(equalToConstant: Self.width),
-            column.leadingAnchor.constraint(equalTo: listColumn.leadingAnchor),
+            tileStack.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor),
+            tileStack.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor),
+            tileStack.topAnchor.constraint(equalTo: sidebar.topAnchor),
+            indicator.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: -4),
+            indicator.widthAnchor.constraint(equalToConstant: 3),
+            indicator.heightAnchor.constraint(equalToConstant: 20),
+            column.leadingAnchor.constraint(equalTo: listColumn.leadingAnchor, constant: 1),
             column.trailingAnchor.constraint(equalTo: listColumn.trailingAnchor),
             column.topAnchor.constraint(equalTo: listColumn.topAnchor),
             column.bottomAnchor.constraint(equalTo: listColumn.bottomAnchor, constant: -4),
+            separator.leadingAnchor.constraint(equalTo: listColumn.leadingAnchor),
+            separator.topAnchor.constraint(equalTo: listColumn.topAnchor),
+            separator.bottomAnchor.constraint(equalTo: listColumn.bottomAnchor),
             emptyLabel.heightAnchor.constraint(equalToConstant: 40),
             noticeLine.leadingAnchor.constraint(equalTo: noticesBox.leadingAnchor),
             noticeLine.trailingAnchor.constraint(equalTo: noticesBox.trailingAnchor),
@@ -63,15 +122,15 @@ final class ModelPickerContent: ComposerPopoverContent {
             notices.topAnchor.constraint(equalTo: noticeLine.bottomAnchor, constant: 8),
             notices.bottomAnchor.constraint(equalTo: noticesBox.bottomAnchor, constant: -4),
         ])
-        notices.preferredMaxLayoutWidth = Self.width - 24
+        notices.preferredMaxLayoutWidth = Self.width - Self.sidebarWidth - 24
         search.onChange = { [weak self] _ in self?.reload() }
 
-        let unavailable = Self.unavailableReason(status)
-        notices.stringValue = unavailable ?? ""
-        noticesBox.isHidden = unavailable == nil
+        let unavailable = ProviderKind.allCases.compactMap { Self.unavailableReason(statuses[$0]) }
+        notices.stringValue = unavailable.joined(separator: "\n")
+        noticesBox.isHidden = unavailable.isEmpty
     }
 
-    /// "omp: Not installed. <message>" while omp cannot be used.
+    /// "OpenCode: Not installed. <message>" while a provider cannot be used.
     static func unavailableReason(_ status: ProviderStatus?) -> String? {
         guard let status else { return nil }
         let kind: String
@@ -87,8 +146,8 @@ final class ModelPickerContent: ComposerPopoverContent {
         return "\(status.kind.displayName): \(kind)."
     }
 
-    /// omp lists every model of every configured provider (700+); rebuilding that many rows per
-    /// keystroke stalls, so the list shows the first matches and a count of the rest.
+    /// omp and OpenCode list every model of every configured provider (700+); rebuilding that many
+    /// rows per keystroke stalls, so the list shows the first matches and a count of the rest.
     nonisolated static let rowLimit = 80
 
     /// Models whose name or slug contains every whitespace-separated word of `query`.
@@ -112,10 +171,18 @@ final class ModelPickerContent: ComposerPopoverContent {
         return (shown, hidden)
     }
 
+    private func showProvider(_ kind: ProviderKind) {
+        guard kind != shownProvider else { return }
+        shownProvider = kind
+        reload()
+    }
+
     private func reload() {
         let query = search.text.trimmingCharacters(in: .whitespaces)
-        let models = ModelChoice.models(status: status)
-        let isCurrent = { [selection] (model: ProviderModel) in model.slug == selection.model }
+        let models = ModelChoice.models(for: shownProvider, status: statuses[shownProvider])
+        let isCurrent = { [shownProvider, selection] (model: ProviderModel) in
+            shownProvider == selection.provider && model.slug == selection.model
+        }
         let (shown, hidden) = Self.window(Self.matching(models, query: query), limit: Self.rowLimit, isCurrent: isCurrent)
         shownModels = shown
         var rows = shownModels.enumerated().map { index, model in
@@ -137,12 +204,25 @@ final class ModelPickerContent: ComposerPopoverContent {
         list.setRows(rows, actions: actions, highlight: query.isEmpty ? (current ?? 0) : 0)
         list.isHidden = shownModels.isEmpty
         emptyLabel.isHidden = !shownModels.isEmpty
+        for (kind, tile) in tiles {
+            tile.isSelected = kind == shownProvider
+        }
+        placeIndicator()
         requestResize?()
     }
 
     private func pick(_ model: ProviderModel) {
-        onSelect(ModelChoice.selecting(model, from: selection))
+        onSelect(ModelChoice.selecting(model, of: shownProvider, from: selection))
         requestClose?()
+    }
+
+    /// Pins the shown-provider pill (3×20, primary) to that provider's tile.
+    private func placeIndicator() {
+        indicatorY?.isActive = false
+        guard let tile = tiles[shownProvider] else { return }
+        let constraint = indicator.centerYAnchor.constraint(equalTo: tile.centerYAnchor)
+        constraint.isActive = true
+        indicatorY = constraint
     }
 
     override func handleKey(_ event: NSEvent) -> Bool {
@@ -160,9 +240,47 @@ final class ModelPickerContent: ComposerPopoverContent {
     }
 
     override func applyPalette(_ palette: Palette) {
+        sidebar.layer?.backgroundColor = palette.muted.composerFaded(0.3).cgColor
         listColumn.layer?.backgroundColor = palette.muted.composerFaded(0.4).cgColor
+        indicator.layer?.backgroundColor = palette.primary.cgColor
         emptyLabel.textColor = palette.mutedForeground
         notices.textColor = palette.mutedForeground
+    }
+}
+
+/// A provider in the model picker's column: its mark in a square button.
+private final class ProviderTile: InteractiveView {
+    private let imageView = NSImageView()
+    let kind: ProviderKind
+
+    var isSelected = false {
+        didSet { applyPalette(palette) }
+    }
+
+    init(kind: ProviderKind) {
+        self.kind = kind
+        super.init(frame: .zero)
+        layer?.cornerRadius = Radius.md
+        imageView.image = ProviderGlyph.image(for: kind, size: 20)
+        imageView.imageScaling = .scaleNone
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(imageView)
+        NSLayoutConstraint.activate([
+            widthAnchor.constraint(equalToConstant: 36),
+            heightAnchor.constraint(equalToConstant: 36),
+            imageView.centerXAnchor.constraint(equalTo: centerXAnchor),
+            imageView.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ])
+        setAccessibilityRole(.button)
+        applyPalette(palette)
+    }
+
+    override func applyPalette(_ palette: Palette) {
+        let fill = isSelected ? palette.foreground.withAlphaComponent(0.08)
+            : isHovered && isEnabled ? palette.foreground.withAlphaComponent(0.1) : .clear
+        layer?.backgroundColor = fill.cgColor
+        imageView.contentTintColor = palette.foreground
+        alphaValue = isEnabled ? 1 : 0.5
     }
 }
 

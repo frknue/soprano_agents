@@ -21,7 +21,7 @@ extension AgentEngine {
     public func commands(forThread threadID: String) -> [ProviderCommand] {
         guard let thread = thread(threadID) else { return [] }
         let provider = thread.modelSelection.provider
-        if let live = runtime.existingThread(threadID)?.commands { return live }
+        if let live = runtime.existingThread(threadID)?.commands, live.provider == provider { return live.list }
         if let list = rememberedCommands(provider, directory: workingDirectory(for: thread)) { return list }
         if let project = project(thread.projectID), let list = rememberedCommands(provider, directory: project.path) { return list }
         return []
@@ -53,10 +53,10 @@ extension AgentEngine {
     /// in the thread's workspace (`ProviderDriver.commands(directory:)`; scratch threads: the
     /// scratch root they share), remembers the answer there and emits `commandsChanged`. Each
     /// provider and workspace is asked once per run, answered or not; nothing happens when a list
-    /// is known or the thread has a session (it reports its own list).
+    /// is known or the thread has a session of its provider (it reports its own list).
     public func loadCommands(forThread threadID: String) {
         guard let thread = thread(threadID), commands(forThread: threadID).isEmpty,
-              runtime.existingThread(threadID)?.session == nil else { return }
+              runtime.existingThread(threadID)?.session?.kind != thread.modelSelection.provider else { return }
         readCommands(thread.modelSelection.provider, directory: workingDirectory(for: thread))
     }
 
@@ -74,16 +74,18 @@ extension AgentEngine {
 
     // MARK: Compaction
 
-    /// The thread has a provider conversation (a live session, or one it can resume) and no
-    /// running turn, so `compact` can start.
+    /// The thread has a provider conversation (a live session of its provider, or one it can
+    /// resume) and no running turn, so `compact` can start.
     public func canCompact(_ threadID: String) -> Bool {
         guard let thread = thread(threadID), !thread.isRunning else { return false }
         return hasProviderConversation(thread)
     }
 
-    /// Compacts the thread's omp conversation (omp `compact`). Runs as a turn whose user message
-    /// is `/compact` (resuming the session first, like `send`), shows omp's result as a notice
-    /// (or an error) and refreshes `contextUsage` when it ends. Returns once omp accepted it.
+    /// Compacts the thread's provider conversation (omp `compact`, OpenCode
+    /// `POST /api/session/{id}/compact`). Runs as a turn whose user message is `/compact`
+    /// (resuming the session first, like `send`), shows the provider's result as a notice (or an
+    /// error) and refreshes `contextUsage` when the provider reports the new fill. Returns once
+    /// the provider accepted it.
     /// Throws while a turn runs or when there is no conversation; `send` with exactly
     /// `/compact` does the same (and `.queue` queues it).
     public func compact(_ threadID: String) async throws {
@@ -97,9 +99,9 @@ extension AgentEngine {
         message.attachments.isEmpty && message.text == compactCommand
     }
 
-    /// A live session, or a conversation id to resume.
+    /// A live session of the thread's provider, or a conversation id to resume.
     func hasProviderConversation(_ thread: AgentThread) -> Bool {
-        if runtime.existingThread(thread.id)?.session != nil { return true }
+        if let session = runtime.existingThread(thread.id)?.session, session.kind == thread.modelSelection.provider { return true }
         return thread.providerThreadID != nil
     }
 
@@ -118,11 +120,11 @@ extension AgentEngine {
     func receiveCommands(_ commands: [ProviderCommand], threadID: String) {
         guard let thread = thread(threadID) else { return }
         let rt = runtime.thread(threadID)
-        let provider = thread.modelSelection.provider
+        let provider = rt.session?.kind ?? thread.modelSelection.provider
         let list = ProviderCommand.normalized(commands)
         var changed = false
-        if rt.commands != list {
-            rt.commands = list
+        if rt.commands?.provider != provider || rt.commands?.list != list {
+            rt.commands = (provider, list)
             changed = true
         }
         let directory = workingDirectory(for: thread)

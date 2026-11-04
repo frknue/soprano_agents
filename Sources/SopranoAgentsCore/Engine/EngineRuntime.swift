@@ -97,8 +97,8 @@ final class ThreadRuntime {
     var reverting: Task<Void, Never>?
     /// Latest title request; older ones finishing later are ignored.
     var titleRequest: UUID?
-    /// The live session's command list.
-    var commands: [ProviderCommand]?
+    /// The live session's command list and the provider that reported it.
+    var commands: (provider: ProviderKind, list: [ProviderCommand])?
     /// Side questions the provider reported this run, newest first (AgentEngine+SideQuestions.swift).
     var sideQuestions: [SideQuestion] = []
     /// `sideQuestions` holds the conversation's history (read from the provider, or restored),

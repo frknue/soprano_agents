@@ -155,13 +155,13 @@ public struct OmpDriver: ProviderDriver {
                 environment: OmpProtocol.environment(adjustments),
                 directory: FileManager.default.fileExists(atPath: cwd) ? cwd : NSTemporaryDirectory()
             ),
-            input: OmpProtocol.generationPrompt(prompt, schema: schema),
+            input: ProviderPrompt.generationPrompt(prompt, schema: schema),
             timeout: Self.generationTimeout,
             label: "omp text generation"
         )
         guard output.status == 0 else {
             throw ProviderError.processExited(.omp, status: output.status, stderr: output.stderr.isEmpty ? output.stdout : output.stderr)
         }
-        return try OmpProtocol.firstJSONObject(in: output.stdout)
+        return try ProviderPrompt.firstJSONObject(in: output.stdout)
     }
 }

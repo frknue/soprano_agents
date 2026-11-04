@@ -15,18 +15,27 @@ enum AppPaths {
     }
 }
 
-/// Executable override from settings.json, readable from the driver's background tasks.
+/// Executable overrides from settings.json, readable from the drivers' background tasks.
 final class ExecutablePaths: @unchecked Sendable {
     private let lock = NSLock()
     private var ompPath: String?
+    private var opencodePath: String?
 
     func update(_ settings: EngineSettings) {
-        lock.withLock { ompPath = settings.ompPath }
+        lock.withLock {
+            ompPath = settings.ompPath
+            opencodePath = settings.opencodePath
+        }
     }
 
     /// `providers.ompPath`, or nil to search PATH.
     var omp: String? {
         lock.withLock { ompPath }
+    }
+
+    /// `providers.opencodePath`, or nil to search PATH.
+    var opencode: String? {
+        lock.withLock { opencodePath }
     }
 }
 
@@ -39,11 +48,11 @@ enum AccountLaunchBridge {
     }
 }
 
-/// Builds the engine the app runs with: JSON-file store, git CLI, the omp driver, omp's usage
-/// statistics and omp's typing aids.
+/// Builds the engine the app runs with: JSON-file store, git CLI, the omp and OpenCode drivers,
+/// omp's usage statistics and omp's typing aids.
 @MainActor
 enum EngineFactory {
-    /// The executable override the driver reads on every spawn; the app delegate keeps it current.
+    /// The executable overrides the drivers read on every spawn; the app delegate keeps them current.
     static let executablePaths = ExecutablePaths()
 
     static func live(settings: EngineSettings) -> AgentEngine {
@@ -57,6 +66,7 @@ enum EngineFactory {
                     executablePath: { paths.omp },
                     launchAdjustments: { AccountLaunchBridge.ompAdjustments() }
                 ),
+                .opencode: OpencodeDriver(executablePath: { paths.opencode }),
             ],
             git: LiveGitService(),
             store: JSONFileThreadStore(directory: dataDirectory),

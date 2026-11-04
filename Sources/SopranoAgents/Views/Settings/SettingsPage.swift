@@ -1,4 +1,5 @@
 import AppKit
+import SopranoAgentsCore
 
 /// The pages of the settings screen, in navigation order.
 enum SettingsPage: String, CaseIterable, Sendable {
@@ -49,13 +50,15 @@ enum SettingsPage: String, CaseIterable, Sendable {
             [("Theme", "color scheme appearance dark light soprano"), ("Chat width", "wide full width column layout messages composer"),
              ("Follow-up behavior", "queue steer running turn send"), ("Project folders", "projects directories open project git repositories")]
         case .providers:
-            [("omp", "provider agent cli version path executable"),
-             ("Default model", "new thread reasoning"), ("Permissions", "runtime mode approval full access supervised")]
+            ProviderKind.allCases.map { ($0.displayName, "provider agent cli \($0.executableName) version status path executable") }
+                + [("Default agent", "provider new thread omp opencode"), ("Default model", "new thread reasoning"),
+                   ("Permissions", "runtime mode approval full access supervised")]
         case .accounts:
             [("Claude accounts", "account usage limits login sign in omp claude anthropic prefer"),
              ("Codex accounts", "account usage limits login sign in omp codex openai chatgpt prefer")]
         case .textGeneration:
-            [("Text generation model", "thread titles commit messages branch names"), ("Generate thread titles", "title")]
+            [("Text generation agent", "provider omp opencode"), ("Text generation model", "thread titles commit messages branch names"),
+             ("Generate thread titles", "title")]
         case .worktrees:
             [("Worktree location", "folder directory path"), ("Branch prefix", "worktree branch naming")]
         case .notifications:

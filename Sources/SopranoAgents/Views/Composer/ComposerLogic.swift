@@ -57,14 +57,14 @@ enum ComposerPrimaryAction: Equatable {
 
 /// Model choice rules shared by the model picker, the traits menu and the model chip.
 enum ModelChoice {
-    /// omp's models: its live catalog once probed, else the built-in fallback.
-    static func models(status: ProviderStatus?) -> [ProviderModel] {
+    /// The models `provider` offers: its live catalog once probed, else the built-in fallback.
+    static func models(for provider: ProviderKind, status: ProviderStatus?) -> [ProviderModel] {
         let live = status?.models ?? []
-        return live.isEmpty ? ProviderCatalog.fallback(.omp) : live
+        return live.isEmpty ? ProviderCatalog.fallback(provider) : live
     }
 
     static func model(for selection: ModelSelection, status: ProviderStatus?) -> ProviderModel? {
-        models(status: status).first { $0.slug == selection.model }
+        models(for: selection.provider, status: status).first { $0.slug == selection.model }
     }
 
     /// Option values `model` accepts: unknown option ids and values outside a select's choices
@@ -79,9 +79,22 @@ enum ModelChoice {
         }
     }
 
-    /// Picking `model` keeps the current option values the new model supports.
-    static func selecting(_ model: ProviderModel, from current: ModelSelection) -> ModelSelection {
-        ModelSelection(provider: .omp, model: model.slug, options: supportedOptions(current.options, for: model))
+    /// Picking `model` of `provider` keeps the current option values the new model supports.
+    static func selecting(_ model: ProviderModel, of provider: ProviderKind, from current: ModelSelection) -> ModelSelection {
+        ModelSelection(provider: provider, model: model.slug, options: supportedOptions(current.options, for: model))
+    }
+
+    /// The agent a thread is locked to: its provider once it has turns (switching would start a
+    /// fresh conversation with another CLI). nil for drafts and turn-less threads.
+    static func lockedProvider(of thread: AgentThread?) -> ProviderKind? {
+        guard let thread, !thread.turns.isEmpty else { return nil }
+        return thread.modelSelection.provider
+    }
+
+    /// Why `kind` cannot be picked in a thread locked to `locked`; nil when it can.
+    static func lockReason(_ kind: ProviderKind, lockedTo locked: ProviderKind?) -> String? {
+        guard let locked, locked != kind else { return nil }
+        return "This thread runs on \(locked.displayName); start a new thread to use \(kind.displayName)."
     }
 
     /// The effort in effect: the explicit value when the model offers it, else the model's default.

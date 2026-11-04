@@ -1,11 +1,12 @@
 import Foundation
 
-/// Finds the agent CLI and builds the environment its processes run with.
+/// Finds the agent CLIs and builds the environment their processes run with.
 ///
 /// GUI apps start with launchd's minimal PATH (`/usr/bin:/bin:/usr/sbin:/sbin`), so the
-/// inherited PATH is extended with the directories installers put `omp` in:
+/// inherited PATH is extended with the directories installers put `omp` and `opencode` in:
 /// `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`, `~/.bun/bin`, `~/.cargo/bin`,
-/// `~/.npm-global/bin`. Children get the same extended PATH so the CLI finds node, git, etc.
+/// `~/.npm-global/bin`, `~/.opencode/bin` (OpenCode's install script). Children get the same
+/// extended PATH so the CLIs find node, git, etc.
 public enum ExecutableLocator {
     /// Extra tool directories, in search order after the inherited PATH.
     public static func toolDirectories(home: String) -> [String] {
@@ -16,6 +17,7 @@ public enum ExecutableLocator {
             "\(home)/.bun/bin",
             "\(home)/.cargo/bin",
             "\(home)/.npm-global/bin",
+            "\(home)/.opencode/bin",
         ]
     }
 

@@ -95,19 +95,24 @@ enum SettingsFile {
           "theme": "soprano",
 
           "agents": {
-            // omp model id ("provider/id"); omit for omp's own configured model.
+            // The agent new threads start with: "omp" or "opencode".
+            "defaultProvider": "omp",
+            // Model id of that agent ("provider/id"); omit for the agent's own configured model.
             // "defaultModel": "anthropic/claude-sonnet-5-5",
             // "approval-required" (Supervised), "auto-accept-edits", "auto", or "full-access".
             "defaultRuntimeMode": "full-access"
           },
 
           "providers": {
-            // The omp executable; omit to find it on PATH.
-            // "ompPath": "~/.bun/bin/omp"
+            // Executables; omit to find them on PATH.
+            // "ompPath": "~/.bun/bin/omp",
+            // "opencodePath": "~/.opencode/bin/opencode"
           },
 
           "textGeneration": {
-            // Thread titles, commit messages and branch names. omp model id; omit for omp's own model.
+            // Thread titles, commit messages and branch names: "omp" or "opencode".
+            "provider": "omp",
+            // Model id of that agent; omit for the agent's own configured model.
             // "model": "anthropic/claude-haiku-5-5",
             "titles": true
           },

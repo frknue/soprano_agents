@@ -1003,7 +1003,9 @@ final class ComposerViewController: NSViewController, FocusRegionController, NST
 
     func toggleModelPicker() {
         guard popoverKind != .model else { return closePopover() }
-        let content = ModelPickerContent(selection: selection, status: engine.status(of: selection.provider)) { [weak self] selection in
+        let statuses = Dictionary(uniqueKeysWithValues: ProviderKind.allCases.map { ($0, engine.status(of: $0)) })
+        let locked = ModelChoice.lockedProvider(of: currentThread)
+        let content = ModelPickerContent(selection: selection, statuses: statuses, lockedProvider: locked) { [weak self] selection in
             self?.setModelSelection(selection)
         }
         present(.model, content: content, anchor: modelChip, side: .above, alignment: .leading) { [weak self] open in
@@ -1303,7 +1305,7 @@ final class ComposerViewController: NSViewController, FocusRegionController, NST
             includeSideQuestion: canAskSideQuestion
         )
         let matches = SlashCommandFilter.matching(candidates, query: token.query)
-        let emptyText = SlashCommandFilter.emptyText(hasCandidates: !candidates.isEmpty, query: token.query)
+        let emptyText = SlashCommandFilter.emptyText(provider: selection.provider, hasCandidates: !candidates.isEmpty, query: token.query)
         if slashMenu != nil, let slashContent {
             slashContent.show(matches, emptyText: emptyText, keepingHighlight: keepingHighlight)
             return

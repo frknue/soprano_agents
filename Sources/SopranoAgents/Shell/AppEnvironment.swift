@@ -35,13 +35,18 @@ struct AppSettings: Equatable, Sendable {
     /// "soprano" (follow Soprano's own theme and appearance) or an id from `AppTheme.options`.
     var theme: String = "soprano"
 
-    /// nil = omp's own configured model (`ModelSelection.ompDefaultModel`).
+    /// The agent new threads start with.
+    var defaultProvider: ProviderKind = .omp
+    /// nil = the provider's own configured model (`ModelSelection.configuredDefaultModel`).
     var defaultModel: String?
     var defaultRuntimeMode: RuntimeMode = .fullAccess
-    /// Executable override; nil = find `omp` on PATH.
+    /// Executable overrides; nil = find `omp` / `opencode` on PATH.
     var ompPath: String?
+    var opencodePath: String?
 
-    /// nil = omp's own configured model.
+    /// The agent that writes thread titles, commit messages and branch names.
+    var textGenerationProvider: ProviderKind = .omp
+    /// nil = that provider's own configured model.
     var textGenerationModel: String?
     var generateTitles = true
 
@@ -65,8 +70,8 @@ struct AppSettings: Equatable, Sendable {
 
     /// The engine's view of these settings.
     var engineSettings: EngineSettings {
-        let model = ModelSelection(provider: .omp, model: defaultModel ?? ModelSelection.ompDefaultModel)
-        let generation = ModelSelection(provider: .omp, model: textGenerationModel ?? ModelSelection.ompDefaultModel)
+        let model = ModelSelection(provider: defaultProvider, model: defaultModel ?? ModelSelection.configuredDefaultModel)
+        let generation = ModelSelection(provider: textGenerationProvider, model: textGenerationModel ?? ModelSelection.configuredDefaultModel)
         return EngineSettings(
             defaultModel: model,
             defaultRuntimeMode: defaultRuntimeMode,
@@ -74,7 +79,8 @@ struct AppSettings: Equatable, Sendable {
             branchPrefix: branchPrefix,
             worktreesDirectory: worktreesDirectory,
             generateTitles: generateTitles,
-            ompPath: ompPath
+            ompPath: ompPath,
+            opencodePath: opencodePath
         )
     }
 }

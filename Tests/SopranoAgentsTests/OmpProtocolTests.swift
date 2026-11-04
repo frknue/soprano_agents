@@ -220,12 +220,6 @@ struct OmpProtocolTests {
         #expect(OmpProtocol.version(fromVersionOutput: "omp/18.14.0\n") == "18.14.0")
     }
 
-    @Test func theFirstJSONObjectIsFoundInsideFencesAndProse() throws {
-        #expect(try OmpProtocol.firstJSONObject(in: "```json\n{\"title\": \"Fix {it}\"}\n```") == ["title": "Fix {it}"])
-        #expect(try OmpProtocol.firstJSONObject(in: "Sure: {\"a\": {\"b\": 1}} done") == ["a": ["b": 1]])
-        #expect(throws: ProviderError.self) { try OmpProtocol.firstJSONObject(in: "no json") }
-    }
-
     // MARK: - Rollback
 
     private static let entries: JSONValue = [

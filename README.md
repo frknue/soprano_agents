@@ -2,11 +2,12 @@
 
 **A native macOS app for coding agents, in the Soprano family.**
 
-Soprano Agents gives the `omp` CLI (oh-my-pi) a native home in the Soprano family,
+Soprano Agents gives the `omp` CLI (oh-my-pi) and OpenCode a native home in the Soprano family,
 colored by Soprano's themes: a thread inbox on the left, a centered chat lane with a floating
 composer, collapsible work logs, approvals and questions inline, per-turn diffs
 from hidden git checkpoints, worktrees, a terminal drawer and a diff panel on the right. It is a
-Swift 6 / AppKit app, not a web view, and it talks to `omp` directly: there is no server.
+Swift 6 / AppKit app, not a web view: it talks to `omp` directly and to OpenCode's own
+background service, and runs no server of its own.
 
 ## Requirements
 
@@ -16,12 +17,19 @@ Swift 6 / AppKit app, not a web view, and it talks to `omp` directly: there is n
   protocol, so omp's tool approvals and its `ask` tool show up inline. Every model omp knows (its
   `/model` list across Anthropic, OpenAI, Copilot, OpenRouter, …) is in the model picker;
   "configured" is whatever omp itself defaults to.
+- Instead of omp, or besides it, [OpenCode](https://opencode.ai) 2.x with at least one model provider connected
+  (`opencode auth`). Soprano Agents uses OpenCode's background service (`opencode serve
+  --service`; it starts it when needed), so OpenCode threads also show up in the `opencode` TUI.
+  Its permission prompts and questions show up inline; every OpenCode model is in the model
+  picker, its variants as Reasoning.
 - `git` for checkpoints, diffs and worktrees; `gh` for creating pull requests.
 
 Apps started from the Dock get a minimal `PATH`, so Soprano Agents also looks in
-`~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`, `~/.bun/bin` and `~/.cargo/bin`. If `omp`
-lives elsewhere, set its path in **Settings › Providers** (`providers.ompPath`). The same page
-shows omp's version and health.
+`~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`, `~/.bun/bin`, `~/.cargo/bin`,
+`~/.npm-global/bin` and `~/.opencode/bin` (OpenCode's installer). If `omp`
+or `opencode` lives elsewhere, set its path in **Settings › Providers** (`providers.ompPath`,
+`providers.opencodePath`). The same page shows each agent's version and health; new threads start
+on omp unless you pick another default agent there.
 
 ## Install and build
 
@@ -41,12 +49,14 @@ The installer never restarts a running Soprano Agents; the update applies on the
 1. Open a project (`⇧⌘K`: your projects plus the subfolders of the project folders in
    **Settings › General**, e.g. `~/git/private`; **Choose Folder…** for any other) or start
    without one (`⌃⌘N`).
-2. Pick a model (`⇧⌘M`), permissions (`⇧⌘A`) and workspace (`⇧⌘X`: current checkout or a
-   new worktree), type, and press Return.
+2. Pick a model (`⇧⌘M`; its left column switches between omp and OpenCode until the thread's
+   first message), permissions (`⇧⌘A`) and workspace (`⇧⌘X`: current checkout or a new
+   worktree), type, and press Return.
 3. While the agent works, sending again steers the running turn (or queues, per
    **Settings › General › Follow-up behavior**); `⌘↩` does the other one. To ask something
    without steering it, send `/btw <question>` or press `⇧⌘I`: the answer appears in a panel
-   above the composer, takes follow-ups, and never joins the conversation (omp's `/btw`).
+   above the composer, takes follow-ups, and never joins the conversation (omp's `/btw`; on
+   OpenCode the app keeps them until it quits).
 4. Approve or decline commands and file changes inline; answer the agent's questions in the
    composer.
 5. Open a turn's diff from its changed-files card, or the whole thread's with `⌘D`. "Edit from
@@ -145,10 +155,12 @@ keeping your comments.
 | Key | Default | |
 |---|---|---|
 | `theme` | `"soprano"` | `soprano` (follow Soprano's theme and appearance) or a Soprano theme id (`folio` follows macOS, `folio-paper`, `folio-ink`, `nord`, …) |
-| `agents.defaultModel` | omp's configured model | model id `provider/id`, e.g. `anthropic/claude-opus-5-5` |
+| `agents.defaultProvider` | `"omp"` | `omp` or `opencode`: the agent new threads start with |
+| `agents.defaultModel` | the agent's configured model | model id `provider/id`, e.g. `anthropic/claude-opus-5-5` (omp) or `claude-agent/opus` (OpenCode) |
 | `agents.defaultRuntimeMode` | `"full-access"` | `approval-required`, `auto-accept-edits`, `auto`, `full-access` |
-| `providers.ompPath` | found on `PATH` | path to the `omp` executable |
-| `textGeneration.model` / `.titles` | omp's configured model / `true` | titles, commit messages, branch names, generated with omp |
+| `providers.ompPath` / `.opencodePath` | found on `PATH` | path to the `omp` / `opencode` executable |
+| `textGeneration.provider` | `"omp"` | `omp` or `opencode`: the agent that writes titles, commit messages, branch names |
+| `textGeneration.model` / `.titles` | that agent's configured model / `true` | the model for them; `titles: false` keeps first-message titles |
 | `worktrees.directory` | `~/.soprano-agents/worktrees` | new worktrees go to `<directory>/<repo>/<branch>` |
 | `worktrees.branchPrefix` | `"soprano"` | `soprano/fix-login-error` |
 | `projects.directories` | `[]` | folders whose subfolders Open Project… (`⇧⌘K`) lists, e.g. `["~/git/private", "~/git/work"]` |

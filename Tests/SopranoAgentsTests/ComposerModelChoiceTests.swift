@@ -21,11 +21,41 @@ struct ComposerModelChoiceTests {
 
     @Test func pickingAnotherModelKeepsOnlyTheOptionValuesItSupports() {
         let current = ModelSelection(provider: .omp, model: opus.slug, options: ["effort": "xhigh", "fastMode": "true"])
-        #expect(ModelChoice.selecting(haiku, from: current) == ModelSelection(provider: .omp, model: haiku.slug))
+        #expect(ModelChoice.selecting(haiku, of: .omp, from: current) == ModelSelection(provider: .omp, model: haiku.slug))
 
         let medium = ModelSelection(provider: .omp, model: opus.slug, options: ["effort": "medium", "fastMode": "true"])
-        #expect(ModelChoice.selecting(haiku, from: medium).options == ["effort": "medium"])
-        #expect(ModelChoice.selecting(opus, from: medium) == medium)
+        #expect(ModelChoice.selecting(haiku, of: .omp, from: medium).options == ["effort": "medium"])
+        #expect(ModelChoice.selecting(opus, of: .omp, from: medium) == medium)
+    }
+
+    @Test func pickingAnOpencodeModelSwitchesTheSelectionsProvider() {
+        let opencodeOpus = ProviderModel(
+            slug: "claude-agent/opus",
+            name: "Opus 5.5 · claude-agent",
+            options: [ProviderCatalog.effortOption(["low", "medium", "high"], default: "high")]
+        )
+        let current = ModelSelection(provider: .omp, model: opus.slug, options: ["effort": "medium", "fastMode": "true"])
+        let picked = ModelChoice.selecting(opencodeOpus, of: .opencode, from: current)
+        #expect(picked == ModelSelection(provider: .opencode, model: "claude-agent/opus", options: ["effort": "medium"]))
+
+        let opencode = ProviderStatus(kind: .opencode, health: .ready, models: [opencodeOpus])
+        #expect(ModelChoice.model(for: picked, status: opencode) == opencodeOpus)
+        #expect(ModelChoice.chipTitle(ModelSelection.default(for: .opencode), status: nil) == "OpenCode default")
+    }
+
+    @Test func aThreadWithTurnsKeepsItsAgentWhileDraftsAndEmptyThreadsMaySwitch() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let selection = ModelSelection(provider: .opencode, model: "claude-agent/opus")
+        var thread = AgentThread(id: "t", projectID: nil, title: "T", createdAt: now, modelSelection: selection)
+        #expect(ModelChoice.lockedProvider(of: nil) == nil)
+        #expect(ModelChoice.lockedProvider(of: thread) == nil)
+
+        thread.turns = [Turn(ordinal: 1, userMessage: UserMessage(text: "Hi", createdAt: now), modelSelection: selection, status: .completed, startedAt: now)]
+        let locked = ModelChoice.lockedProvider(of: thread)
+        #expect(locked == .opencode)
+        #expect(ModelChoice.lockReason(.opencode, lockedTo: locked) == nil)
+        #expect(ModelChoice.lockReason(.omp, lockedTo: locked) == "This thread runs on OpenCode; start a new thread to use omp.")
+        #expect(ModelChoice.lockReason(.omp, lockedTo: nil) == nil)
     }
 
     @Test func unknownOptionsAndInvalidValuesAreDropped() {
@@ -36,10 +66,11 @@ struct ComposerModelChoiceTests {
     @Test func aProbedCatalogReplacesTheFallbackOnceItHasModels() {
         let live = ProviderModel(slug: "anthropic/claude-opus-6", name: "Claude Opus 6 · anthropic", isDefault: true)
         let probed = ProviderStatus(kind: .omp, health: .ready, models: [live])
-        #expect(ModelChoice.models(status: probed) == [live])
+        #expect(ModelChoice.models(for: .omp, status: probed) == [live])
         #expect(ModelChoice.model(for: ModelSelection(provider: .omp, model: live.slug), status: probed) == live)
-        #expect(ModelChoice.models(status: ProviderStatus(kind: .omp)) == ProviderCatalog.fallback(.omp))
-        #expect(ModelChoice.models(status: nil) == ProviderCatalog.fallback(.omp))
+        #expect(ModelChoice.models(for: .omp, status: ProviderStatus(kind: .omp)) == ProviderCatalog.fallback(.omp))
+        #expect(ModelChoice.models(for: .omp, status: nil) == ProviderCatalog.fallback(.omp))
+        #expect(ModelChoice.models(for: .opencode, status: nil) == ProviderCatalog.fallback(.opencode))
     }
 
     @Test func theModelChipTitleNamesTheModelAndTheEffortInEffect() {

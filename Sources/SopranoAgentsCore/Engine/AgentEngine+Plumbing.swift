@@ -273,7 +273,13 @@ extension AgentEngine {
         guard let thread = thread(threadID) else { throw EngineError.unknownThread(threadID) }
         let rt = runtime.thread(threadID)
         if let starting = rt.starting { return try await starting.value }
-        if let session = rt.session { return session }
+        if let session = rt.session {
+            if session.kind == thread.modelSelection.provider { return session }
+            // The thread switched agents: the old CLI's session cannot run the new one's turns.
+            rt.dropSession()
+            await session.close()
+            return try await ensureSession(threadID)
+        }
         try requireWorkspace(for: thread)
         let kind = thread.modelSelection.provider
         guard let driver = environment.drivers[kind] else {

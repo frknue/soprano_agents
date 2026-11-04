@@ -4,9 +4,11 @@ Deliberately not built yet, so nobody mistakes their absence for a bug. Geplante
 `docs/BACKLOG.md`.
 
 - Remote environments (SSH, Tailscale, relays, WSL), pairing, guest sharing.
-- Agents other than omp (Codex, Claude Code, Cursor, OpenCode, upstream Pi, Grok, ACP registry
-  agents): omp is deliberately the only agent.
-- Plan mode: omp's RPC has no plan-mode switch.
+- Agents other than omp and OpenCode (Codex, Claude Code, Cursor, upstream Pi, Grok, ACP registry
+  agents).
+- Plan mode: omp's RPC has no plan-mode switch (OpenCode's plan agent is not offered either).
+- Statistics, Accounts and word completion for OpenCode: they read omp's own data and helpers.
+- OpenCode side-question history across app runs: OpenCode keeps none, the app keeps this run's.
 - Right-panel surfaces other than Diff, Files, file tabs and Terminal: in-app browser preview
   (im Backlog, nach der Link-Karte), pull request pages, device; editing files in the file tab.
 - Subagent lineage tree.
