@@ -127,6 +127,15 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         CommandRegistry.shared.perform(id, in: commandContext())
     }
 
+    /// What takes the keyboard when the window comes forward (notification click, Dock): the
+    /// dialog, settings screen or Commit dialog open over it, so typing never reaches the views
+    /// it covers, else the window.
+    var keyTarget: NSWindow? {
+        OverlayWindow.topmost(over: window)
+            ?? window?.childWindows?.last { $0 is CommitDialogPanel && $0.isVisible }
+            ?? window
+    }
+
     func windowWillClose(_ notification: Notification) {
         router.stopMonitoring()
     }

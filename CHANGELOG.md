@@ -144,8 +144,10 @@ All notable changes to Soprano Agents are documented here. The format follows
   keeps its keys in the `/` menu and popovers; dropped folders are no longer copied as
   attachments; ⌘'s swapped send action no longer sticks after switching apps; a question no
   longer auto-advances on another thread.
-- A dialog raised while the window is minimized or hidden shows as a normal alert; a settings
-  file that could not be read clears its error once it reads again.
+- A dialog raised while the window is minimized or hidden shows as a normal alert; clicking a
+  notification or the Dock icon while Settings, a dialog or the Commit dialog is open gives that
+  dialog the keyboard instead of the views it covers; a settings file that could not be read
+  clears its error once it reads again.
 - The diff no longer jumps back to a file you opened from a changed-files card; double-clicking
   the title in a subagent view no longer starts a rename.
 - Return in an untouched settings field writes nothing, settled threads in search no longer
