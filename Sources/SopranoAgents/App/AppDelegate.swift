@@ -59,8 +59,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func openThread(_ threadID: String) {
         guard let controller = windowController else { return }
         controller.state.select(.thread(threadID))
-        controller.window?.deminiaturize(nil)
-        controller.keyTarget?.makeKeyAndOrderFront(nil)
+        controller.bringForward()
         NSApp.activate(ignoringOtherApps: true)
     }
 
@@ -69,7 +68,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        if !flag { windowController?.keyTarget?.makeKeyAndOrderFront(nil) }
+        if !flag { windowController?.bringForward() }
         return true
     }
 

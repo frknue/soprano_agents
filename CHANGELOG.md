@@ -128,7 +128,7 @@ All notable changes to Soprano Agents are documented here. The format follows
 
 - Git: committing works with an untracked nested repository that has no commits yet; a new
   worktree whose submodules fail, or whose setup you stop or quit, is removed with its branch,
-  and a folder already used by another worktree is never touched; quit waits for that cleanup.
+  and quit waits for that cleanup.
   The commit dialog always lists the current changes of the thread you are on, and a double
   click no longer starts a git action twice.
 - Quitting keeps the checkpoint of a turn the quit interrupted and never starts a queued
@@ -145,9 +145,10 @@ All notable changes to Soprano Agents are documented here. The format follows
   attachments; ⌘'s swapped send action no longer sticks after switching apps; a question no
   longer auto-advances on another thread.
 - A dialog raised while the window is minimized or hidden shows as a normal alert; clicking a
-  notification or the Dock icon while Settings, a dialog or the Commit dialog is open gives that
-  dialog the keyboard instead of the views it covers; a settings file that could not be read
-  clears its error once it reads again.
+  notification or the Dock icon (also for a minimized window) while Settings, a dialog or the
+  Commit dialog is open gives that dialog the keyboard instead of the views it covers; a
+  settings file that could not be read clears its error once it reads again; resetting a
+  setting keeps the comment after the entry before it in `settings.json`.
 - The diff no longer jumps back to a file you opened from a changed-files card; double-clicking
   the title in a subagent view no longer starts a rename.
 - Return in an untouched settings field writes nothing, settled threads in search no longer

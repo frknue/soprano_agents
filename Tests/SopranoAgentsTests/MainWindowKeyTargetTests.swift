@@ -46,4 +46,23 @@ struct MainWindowKeyTargetTests {
 
         #expect(controller.keyTarget === panel)
     }
+
+    @Test func aDialogHiddenWithItsMinimizedWindowStillTakesTheKeyboardOnReopen() async throws {
+        let controller = try controller()
+        let window = try #require(controller.window)
+        controller.showWindow(nil)
+        defer { window.close() }
+        let overlay = OverlayWindow()
+        overlay.present(over: window)
+        defer { overlay.dismiss() }
+        // A minimized window's children go off screen with it; the dialog is still open.
+        window.miniaturize(nil)
+        _ = await EngineHarness.eventually(timeout: .seconds(3)) { window.isMiniaturized && !overlay.isVisible }
+        try #require(window.isMiniaturized && !overlay.isVisible)
+
+        #expect(controller.keyTarget === overlay)
+
+        overlay.dismiss()
+        #expect(controller.keyTarget === window)
+    }
 }

@@ -129,11 +129,19 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     /// What takes the keyboard when the window comes forward (notification click, Dock): the
     /// dialog, settings screen or Commit dialog open over it, so typing never reaches the views
-    /// it covers, else the window.
+    /// it covers, else the window. Not by visibility: a minimized window's dialogs are off screen
+    /// with it, and closing one removes it from the window's children.
     var keyTarget: NSWindow? {
-        OverlayWindow.topmost(over: window)
-            ?? window?.childWindows?.last { $0 is CommitDialogPanel && $0.isVisible }
-            ?? window
+        window?.childWindows?.last { child in
+            (child as? OverlayWindow).map { !$0.isClosing } ?? (child is CommitDialogPanel)
+        } ?? window
+    }
+
+    /// Brings the window back (also from the Dock's minimized windows) and gives the keyboard to
+    /// `keyTarget`.
+    func bringForward() {
+        window?.makeKeyAndOrderFront(nil)
+        keyTarget?.makeKeyAndOrderFront(nil)
     }
 
     func windowWillClose(_ notification: Notification) {
