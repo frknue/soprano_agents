@@ -2,7 +2,7 @@ import Foundation
 
 /// The team's wire surface, pure so it is testable without a provider: the host tools every omp
 /// conversation gets while the team has members (`team_message`, `team_list`, `team_activity`;
-/// teammates also `team_create`),
+/// teammates also `team_create`, `team_update`, `team_delete`),
 /// the system-prompt appendix and memory overlay of a teammate, the header a teammate's
 /// messages carry, the replies and reports the tools return, and the omp agent file a teammate
 /// exports.
@@ -11,6 +11,8 @@ public enum TeamTools {
     public static let list = "team_list"
     public static let activity = "team_activity"
     public static let create = "team_create"
+    public static let update = "team_update"
+    public static let delete = "team_delete"
 
     /// Marker line in exported omp agent files; a file without it is never touched.
     static let exportMarker = "# soprano-agents-teammate:"
@@ -19,8 +21,8 @@ public enum TeamTools {
 
     /// The host tools of a conversation. `others`: the teammates it can reach (never itself).
     /// A normal thread gets nothing while nobody is on the team; a teammate always gets
-    /// `team_list`, `team_activity` (its own activity) and `team_create`, `team_message` once it
-    /// has someone to message.
+    /// `team_list`, `team_activity` (its own activity), `team_create`, `team_update` and
+    /// `team_delete`, `team_message` once it has someone to message.
     public static func definitions(others: [Teammate], callerIsTeammate: Bool) -> [HostToolDefinition] {
         guard !others.isEmpty || callerIsTeammate else { return [] }
         var tools: [HostToolDefinition] = []
@@ -97,6 +99,42 @@ public enum TeamTools {
                     "additionalProperties": false,
                 ]
             ))
+            tools.append(HostToolDefinition(
+                name: update,
+                label: "Team update",
+                description: """
+                Change a teammate on the user's team (yourself included): only the fields you pass change. Use it when \
+                the user asks, or to correct a teammate's role or standing instructions. A new handle renames its \
+                `team_message` address. The change reaches its conversation with its next turn. Tell the user what changed.
+                """,
+                parameters: [
+                    "type": "object",
+                    "properties": [
+                        "teammate": ["type": "string", "description": "Current handle of the teammate."],
+                        "name": ["type": "string", "description": "New display name."],
+                        "handle": ["type": "string", "description": "New lowercase handle."],
+                        "role": ["type": "string", "description": "New one-line role."],
+                        "instructions": ["type": "string", "description": "New standing instructions (replace the old ones whole)."],
+                        "home": ["type": "string", "description": "New home: a Soprano Agents project by title or path, or `own` for its own folder."],
+                    ],
+                    "required": ["teammate"],
+                    "additionalProperties": false,
+                ]
+            ))
+            tools.append(HostToolDefinition(
+                name: delete,
+                label: "Team delete",
+                description: """
+                Delete a teammate for good: its conversation, memory and terminal-omp export go with it. Only when the \
+                user explicitly asks; to change a teammate, use `team_update`. You can't delete yourself.
+                """,
+                parameters: [
+                    "type": "object",
+                    "properties": ["teammate": ["type": "string", "description": "Handle of the teammate to delete."]],
+                    "required": ["teammate"],
+                    "additionalProperties": false,
+                ]
+            ))
         }
         return tools
     }
@@ -121,7 +159,7 @@ public enum TeamTools {
         ## How your team works
         - This conversation is your working life: every request reaches you here, from the user, from the user's threads and from other teammates. Each message starts with a header saying when it arrived and who sent it.
         - When a thread or teammate sent the message, your final answer of that turn goes back to them as your reply: make it complete on its own.
-        - Ask a teammate with `team_message`; see who is on the team with `team_list`; add one with `team_create` when the user asks or a long-lived role is missing.
+        - Ask a teammate with `team_message`; see who is on the team with `team_list`; add one with `team_create` when the user asks or a long-lived role is missing; change one with `team_update`; delete one with `team_delete` only when the user explicitly asks.
         - Asked what you did (today, yesterday, this week), call `team_activity`: it reads your recorded requests exactly; don't rely on what is left in your context.
         """
         if hasMemory {

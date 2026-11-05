@@ -88,8 +88,9 @@ The installer never restarts a running Soprano Agents; the update applies on the
    your threads and other teammates message it by handle, and messages they sent read
    "From CTO" / "From thread “…”" (click to open the sender). Optionally it is also written to
    `~/.omp/agent/agents/<handle>.md`, so terminal omp can start a fresh copy of it. Right-click a
-   teammate for Edit / Delete Teammate…. Teammates can also add teammates themselves (ask your
-   CTO for a frontend engineer); they appear in the Team section like ones you created.
+   teammate for Edit / Delete Teammate…. Teammates can also add, change and delete teammates
+   themselves (ask your CTO for a frontend engineer); they appear in the Team section like ones
+   you created.
 
 `⌘K` (or `⌘P`) opens the command palette, Soprano's own: every action with its shortcut, threads,
 projects and settings pages. When the app is in the background, finished, failed and

@@ -233,6 +233,10 @@ extension AgentEngine {
             return teamActivity(call.arguments, caller: caller)
         case TeamTools.create where caller.teammate != nil:
             return teamCreate(call.arguments)
+        case TeamTools.update where caller.teammate != nil:
+            return teamUpdate(call.arguments)
+        case TeamTools.delete where caller.teammate != nil:
+            return await teamDelete(call.arguments, caller: caller)
         default:
             return HostToolResult(text: "Soprano Agents has no tool named \(call.name).", isError: true)
         }
@@ -286,12 +290,10 @@ extension AgentEngine {
         let name = arguments["name"]?.nonEmptyString ?? ""
         var projectID: String?
         if let home = arguments["home"]?.nonEmptyString {
-            guard let project = projectNamed(home) else {
-                let known = projects.map { "\($0.title) (\(($0.path as NSString).abbreviatingWithTildeInPath))" }
-                let list = known.isEmpty ? "There are no projects." : "Projects: \(known.joined(separator: ", "))."
-                return HostToolResult(text: "No single project matches “\(home)”. \(list) Omit `home` for the teammate's own folder.", isError: true)
+            switch homeProject(home) {
+            case let .success(id): projectID = id
+            case let .failure(problem): return HostToolResult(text: problem.text, isError: true)
             }
-            projectID = project.id
         }
         let draft = TeammateDraft(
             name: name,
@@ -310,6 +312,52 @@ extension AgentEngine {
         } catch {
             return HostToolResult(text: Self.describe(error), isError: true)
         }
+    }
+
+    /// `team_update`: changes the named fields of a teammate (the others stay); same rules as the
+    /// Edit Teammate dialog. A new persona or home reaches its conversation with its next turn.
+    private func teamUpdate(_ arguments: JSONValue) -> HostToolResult {
+        let handle = arguments["teammate"]?.nonEmptyString ?? ""
+        guard let target = teammateThread(handle: handle), var draft = teammateDraft(target.id) else { return unknownTeammate(handle) }
+        if let name = arguments["name"]?.nonEmptyString { draft.name = name }
+        if let newHandle = arguments["handle"]?.nonEmptyString { draft.handle = newHandle }
+        if let role = arguments["role"]?.stringValue { draft.role = role }
+        if let instructions = arguments["instructions"]?.stringValue { draft.instructions = instructions }
+        if let home = arguments["home"]?.nonEmptyString {
+            switch homeProject(home) {
+            case let .success(id): draft.projectID = id
+            case let .failure(problem): return HostToolResult(text: problem.text, isError: true)
+            }
+        }
+        do {
+            let saved = try updateTeammate(target.id, draft)
+            guard let thread = thread(saved.threadID), let teammate = thread.teammate else { return unknownTeammate(draft.handle) }
+            let home = (workingDirectory(for: thread) as NSString).abbreviatingWithTildeInPath
+            var text = "Updated \(teammate.name) (`\(teammate.handle)`), home \(home). The change applies from its next turn."
+            if let warning = saved.warning { text += "\n\(warning)" }
+            return HostToolResult(text: text)
+        } catch {
+            return HostToolResult(text: Self.describe(error), isError: true)
+        }
+    }
+
+    /// `team_delete`: removes a teammate with its conversation, memory and export. Never the caller.
+    private func teamDelete(_ arguments: JSONValue, caller: AgentThread) async -> HostToolResult {
+        let handle = arguments["teammate"]?.nonEmptyString ?? ""
+        guard let target = teammateThread(handle: handle), let teammate = target.teammate else { return unknownTeammate(handle) }
+        if target.id == caller.id { return HostToolResult(text: "A teammate can't delete itself; ask the user.", isError: true) }
+        await deleteThread(target.id)
+        return HostToolResult(text: "Deleted \(teammate.name) (`\(teammate.handle)`) with its conversation and memory.")
+    }
+
+    /// The project id a `home` argument names: `own` = the teammate's own folder (nil), else a
+    /// project by path or unique title; the failure is the tool's error result.
+    private func homeProject(_ home: String) -> Result<String?, HostToolResultError> {
+        if home.caseInsensitiveCompare("own") == .orderedSame { return .success(nil) }
+        if let project = projectNamed(home) { return .success(project.id) }
+        let known = projects.map { "\($0.title) (\(($0.path as NSString).abbreviatingWithTildeInPath))" }
+        let list = known.isEmpty ? "There are no projects." : "Projects: \(known.joined(separator: ", "))."
+        return .failure(HostToolResultError(text: "No single project matches “\(home)”. \(list) Use `own` for the teammate's own folder."))
     }
 
     /// The project `text` names: its path (`~` allowed), else its title (case-insensitive); nil
@@ -416,4 +464,9 @@ extension AgentEngine {
             runtime.track { [self] in await interrupt(targetID) }
         }
     }
+}
+
+/// A team tool argument that can't be used; its `text` becomes the tool's error result.
+struct HostToolResultError: Error {
+    let text: String
 }

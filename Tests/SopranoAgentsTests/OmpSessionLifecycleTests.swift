@@ -339,7 +339,7 @@ struct OmpSessionLifecycleTests {
         let args = try #require(fake.launches().first)
         #expect(args.suffix(4) == ["--append-system-prompt", "/tmp/persona.md", "--config", "/tmp/memory.yml"])
         let tools = try #require(fake.received("set_host_tools").first?["tools"]?.arrayValue)
-        #expect(tools.compactMap { $0["name"]?.stringValue } == [TeamTools.message, TeamTools.list, TeamTools.activity, TeamTools.create])
+        #expect(tools.compactMap { $0["name"]?.stringValue } == [TeamTools.message, TeamTools.list, TeamTools.activity, TeamTools.create, TeamTools.update, TeamTools.delete])
         #expect(tools.allSatisfy { $0["loadMode"] == "essential" })
         #expect(cancelled)
         #expect(recorder.events.contains(.hostToolCall(HostToolCall(id: "host_1", toolCallID: "toolu_1", name: "team_message", arguments: ["to": "cto", "message": "status?"]))))

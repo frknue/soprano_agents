@@ -205,7 +205,7 @@ struct EngineTeamTests {
         let cto = try teammate(engine, "CTO", handle: "cto")
         try await engine.send(cto, text: "We need a frontend engineer", attachments: [])
         let ctoSession = try #require(session(of: cto, engine, driver))
-        #expect(ctoSession.configs.first?.hostTools.map(\.name) == [TeamTools.list, TeamTools.activity, TeamTools.create])
+        #expect(ctoSession.configs.first?.hostTools.map(\.name) == [TeamTools.list, TeamTools.activity, TeamTools.create, TeamTools.update, TeamTools.delete])
 
         ctoSession.emit(.hostToolCall(HostToolCall(id: "h1", toolCallID: nil, name: TeamTools.create, arguments: [
             "name": .string("Frontend engineer"), "role": .string("Owns the theme"), "instructions": .string("Ship small PRs."),
@@ -255,6 +255,40 @@ struct EngineTeamTests {
         #expect(await EngineHarness.eventually { caller.hostToolResults.count == 1 })
         #expect(caller.hostToolResults.first?.result.isError == true)
         #expect(engine.team.compactMap(\.teammate?.handle) == ["cto"])
+    }
+
+    @Test func aTeammateUpdatesAnotherOnlyInTheFieldsItPassesAndDeletesOthersButNeverItself() async throws {
+        let driver = ScriptedDriver()
+        let engine = EngineHarness.engine(driver: driver)
+        let project = engine.addProject(path: EngineHarness.temporaryDirectory().path)
+        let cto = try teammate(engine, "CTO", handle: "cto")
+        let theme = try engine.createTeammate(TeammateDraft(
+            name: "Theme", handle: "theme", role: "Valkental themes", instructions: "Valkental only.", projectID: project.id, exportsToOmp: false
+        )).threadID
+        let qa = try teammate(engine, "QA", handle: "qa")
+        try await engine.send(cto, text: "Fix the team", attachments: [])
+        let ctoSession = try #require(session(of: cto, engine, driver))
+
+        ctoSession.emit(.hostToolCall(HostToolCall(id: "h1", toolCallID: nil, name: TeamTools.update, arguments: [
+            "teammate": .string("theme"), "handle": .string("frontend"), "role": .string("Themes for every account"), "home": .string("own"),
+        ])))
+        #expect(await EngineHarness.eventually { ctoSession.hostToolResults.count == 1 })
+        #expect(ctoSession.hostToolResults[0].result.isError == false)
+        let updated = try #require(engine.thread(theme))
+        #expect(updated.teammate == Teammate(name: "Theme", handle: "frontend", role: "Themes for every account", instructions: "Valkental only.", exportsToOmp: false))
+        #expect(updated.projectID == nil)
+        #expect(await EngineHarness.eventually {
+            ctoSession.hostToolSets.last?.first?.parameters["properties"]?["to"]?["enum"] == ["frontend", "qa"]
+        })
+
+        ctoSession.emit(.hostToolCall(HostToolCall(id: "h2", toolCallID: nil, name: TeamTools.delete, arguments: ["teammate": .string("cto")])))
+        ctoSession.emit(.hostToolCall(HostToolCall(id: "h3", toolCallID: nil, name: TeamTools.delete, arguments: ["teammate": .string("qa")])))
+        #expect(await EngineHarness.eventually { ctoSession.hostToolResults.count == 3 })
+        let results = Dictionary(uniqueKeysWithValues: ctoSession.hostToolResults.map { ($0.id, $0.result) })
+        #expect(results["h2"] == HostToolResult(text: "A teammate can't delete itself; ask the user.", isError: true))
+        #expect(results["h3"]?.isError == false)
+        #expect(engine.thread(qa) == nil)
+        #expect(engine.team.compactMap(\.teammate?.handle) == ["cto", "frontend"])
     }
 
     @Test func aNormalThreadGetsTeamToolsOnlyOnceTheTeamHasMembers() async throws {

@@ -214,8 +214,9 @@ Engine behavior:
   `ThreadRuntime.relaunchRequested` so the next turn's `ensureSession` starts a new process
   (resuming) between turns. Every omp conversation's `SessionConfig` comes from
   `sessionConfig(for:)`: `hostTools` = `TeamTools.definitions` (nothing for a normal thread while
-  the team is empty; a teammate always gets `team_list`, `team_activity` and `team_create`,
-  `team_message` once others exist; the `to` enum lists the other handles, so `refreshTeamTools`
+  the team is empty; a teammate always gets `team_list`, `team_activity`, `team_create`,
+  `team_update` and `team_delete`, `team_message` once others exist; the `to` enum lists the
+  other handles, so `refreshTeamTools`
   re-sends them to every live omp session when the team changes). A teammate also gets
   `<data>/team/<thread>/persona.md` (`--append-system-prompt`: who it is, its instructions, the
   team rules) and `memory.yml` (`--config`: omp's Mnemopi memory backend with `scoping: global`
@@ -238,6 +239,9 @@ Engine behavior:
   `createTeammate` like the dialog: the handle defaults to `suggestedHandle(name)`, `home` names a
   project by path or unique title (default: its own folder), validation errors come back as the
   tool's error, and the caller can message the new teammate as soon as the result returns.
+  `team_update {teammate, name?, handle?, role?, instructions?, home?}` runs `updateTeammate` with
+  only the passed fields changed (`home: own` = its own folder). `team_delete {teammate}` runs
+  `deleteThread`; a teammate can't delete itself. All three are served only for a teammate.
   With `EngineEnvironment.ompAgentsDirectory` set (the app: `~/.omp/agent/agents`; tests and
   fixtures: nil) an opted-in teammate is also written to `<handle>.md` as an omp task agent
   (`TeamTools.ompAgentFile`, marked with its thread id; a file without that mark is never
