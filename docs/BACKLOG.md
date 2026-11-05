@@ -100,6 +100,30 @@ bewusst nicht gebaut wird; ein Eintrag, der gestrichen wird, wandert dorthin.
 - [ ] Von git ignorierte Dateien (`.env`, CLI-Konfiguration) in neue Worktrees kopieren, z. B.
   anhand einer `.worktreeinclude`-Liste.
 
+### 11. Linux-Port für Omarchy (L)
+Furkan wechselt später auf Omarchy (Arch Linux, Hyprland, Wayland). Heute baut die App nur auf
+macOS: `Package.swift` setzt `platforms: [.macOS(.v14)]` und linkt macOS-Frameworks, 106 der 135
+Dateien in `Sources/SopranoAgents` importieren AppKit. `SopranoAgentsCore` (Foundation) ist
+fast portabel.
+- [ ] `SopranoAgentsCore` auf Linux bauen (Swift über `swiftly`):
+  - `os`/`Logger` in `AgentEngine+Plumbing.swift` und `JSONFileThreadStore.swift` ersetzen
+    (swift-log oder `#if canImport(os)`).
+  - `LineProcess.swift`: Glibc-Zweig für `posix_spawn` (`posix_spawn_file_actions_t` und
+    `posix_spawnattr_t` sind dort Structs, `POSIX_SPAWN_CLOEXEC_DEFAULT` fehlt; geerbte fds
+    selbst schließen).
+  - `OpencodeServer.swift`: `URLSession.bytes(for:)`/`AsyncBytes` fehlen in
+    swift-corelibs-foundation; den Event-Stream über AsyncHTTPClient oder einen Delegate-Stream
+    lesen.
+- [ ] Eigenes Core-Testtarget: das heutige hängt an `SopranoAgents` und an den
+  Framework-Pfaden der Command Line Tools. Dazu ein Linux-CI-Job mit `swift build` und den
+  Core-Tests.
+- [ ] UI-Toolkit entscheiden, einmal für die ganze Soprano-Familie und zuerst in Soprano, weil
+  jede App ihr Chrome aus Soprano synct (`scripts/sync-soprano-chrome.sh`). Danach die GUI neu
+  bauen. macOS-gebunden sind heute: AppKit, der Terminal-Drawer (SwiftTerms AppKit-View),
+  FSEvents (→ inotify), `UNUserNotificationCenter` (→ freedesktop-Notifications), `NSWorkspace`
+  (→ `xdg-open`/Portals), `.app`-Paketierung, Signatur und der `snapshot`-Harness.
+- Wo anfangen: der Core-Build.
+
 ## Nicht geplant
 - Sprache, Diktat, Ghost-Text-Vervollständigung, Best-of-N-Läufe, Container, Session-Baum: wenig
   Nutzen für diesen Workflow.
