@@ -6,7 +6,7 @@ import SopranoAgentsCore
 @MainActor
 enum DemoFixtures {
     /// Scenario names accepted by `snapshot --fixture`.
-    static let scenarios = ["demo", "running", "stopping", "editing", "approval", "input", "failed", "background", "answered", "rechecked", "subagents", "subagent", "draft", "empty"]
+    static let scenarios = ["demo", "running", "stopping", "editing", "approval", "input", "failed", "background", "answered", "rechecked", "subagents", "subagent", "draft", "empty", "team", "teammate"]
 
     struct Built {
         let engine: AgentEngine
@@ -23,6 +23,7 @@ enum DemoFixtures {
         case "answered": [answeredThread(now)]
         case "rechecked": [recheckedThread(now)]
         case "subagents", "subagent": [subagentsThread(now)]
+        case "team", "teammate": teamThreads(now)
         default: []
         }
         var sample = threads(now) + extra
@@ -63,6 +64,8 @@ enum DemoFixtures {
         case "rechecked": .thread(ID.rechecked)
         case "subagents": .thread(ID.subagents)
         case "subagent": .subagent(threadID: ID.subagents, subagentID: "Reader")
+        case "team": .thread(ID.cto)
+        case "teammate": .thread(ID.frontend)
         case "draft": .draft(projectID: ID.app)
         case "empty": .draft(projectID: nil)
         default: .thread(ID.demo)
@@ -156,6 +159,9 @@ enum DemoFixtures {
         static let rechecked = "thread-rechecked"
         static let subagents = "thread-subagents"
         static let editing = "thread-editing"
+        static let checkout = "thread-checkout"
+        static let cto = "thread-team-cto"
+        static let frontend = "thread-team-frontend"
     }
 
     static func projects(_ now: Date) -> [Project] {
@@ -558,6 +564,79 @@ enum DemoFixtures {
             )],
             subagents: [reader, scout]
         )
+    }
+
+    /// The "team" and "teammate" scenarios' threads: two teammates — CTO with a conversation
+    /// (one message from the user, one a thread sent it) and Frontend engineer without turns —
+    /// and the thread "Fix checkout totals", whose turn messaged the CTO (`team_message`).
+    static func teamThreads(_ now: Date) -> [AgentThread] {
+        func ago(_ seconds: TimeInterval) -> Date { now.addingTimeInterval(-seconds) }
+        let review = """
+        Looks right. Summing in cents and rounding once is the rule; two notes:
+
+        - `CartTotals.total(for:)` still converts the discount with `Double`. Keep it in cents too.
+        - Add a test with three items at 0.335 each: it's the case that was off by a cent.
+        """
+        let request = "Review this fix: totals were off by a cent because each line item was rounded before summing. I now sum in cents and round once at the end (Sources/Checkout/CartTotals.swift)."
+
+        let checkout = AgentThread(
+            id: ID.checkout, projectID: ID.app, title: "Fix checkout totals", createdAt: ago(5400), updatedAt: ago(3300),
+            modelSelection: omp, lastVisitedAt: ago(3000),
+            turns: [Turn(
+                id: "turn-checkout-1", ordinal: 1,
+                userMessage: UserMessage(id: "msg-checkout-1", text: "Checkout totals are sometimes a cent off. Fix it and have the CTO review it.", createdAt: ago(5400)),
+                modelSelection: omp, status: .completed, startedAt: ago(5400), completedAt: ago(3300),
+                items: [
+                    TurnItem(id: "co-t1", kind: .toolCall(ToolCall(name: "Read", category: .read, title: "Read Sources/Checkout/CartTotals.swift")), status: .completed, startedAt: ago(5390), completedAt: ago(5389)),
+                    TurnItem(id: "co-f1", kind: .fileChange([FileChange(path: "Sources/Checkout/CartTotals.swift", kind: .update)]), status: .completed, startedAt: ago(5000), completedAt: ago(4998)),
+                    TurnItem(id: "co-m1", kind: .toolCall(ToolCall(
+                        name: TeamTools.message, category: .subagent, title: "Message to cto",
+                        input: request,
+                        output: review
+                    )), status: .completed, startedAt: ago(4000), completedAt: ago(3600)),
+                    TurnItem(id: "co-a1", kind: .assistantMessage(text: "Fixed: totals now sum in cents and round once. The CTO approved it and asked to keep the discount in cents too and to add a three-item test; both are in.", isFinal: true), status: .completed, startedAt: ago(3320), completedAt: ago(3300)),
+                ]
+            )]
+        )
+
+        let cto = AgentThread(
+            id: ID.cto, projectID: ID.app, title: "CTO", createdAt: ago(86400 * 6), updatedAt: ago(3600),
+            modelSelection: omp, lastVisitedAt: ago(1800),
+            turns: [
+                Turn(
+                    id: "turn-cto-1", ordinal: 1,
+                    userMessage: UserMessage(id: "msg-cto-1", text: "What's our rule for money math in the app?", createdAt: ago(86400 * 2)),
+                    modelSelection: omp, status: .completed, startedAt: ago(86400 * 2), completedAt: ago(86400 * 2 - 30),
+                    items: [TurnItem(id: "cto-a1", kind: .assistantMessage(text: "Integer minor units (cents) end to end. Convert to `Decimal` only at the formatting edge, and round once, at the end of a calculation.", isFinal: true), status: .completed)]
+                ),
+                Turn(
+                    id: "turn-cto-2", ordinal: 2,
+                    userMessage: UserMessage(
+                        id: "msg-cto-2", text: request, createdAt: ago(4000),
+                        sender: MessageSender(kind: .thread, threadID: ID.checkout, name: "Fix checkout totals")
+                    ),
+                    modelSelection: omp, status: .completed, startedAt: ago(4000), completedAt: ago(3600),
+                    items: [
+                        TurnItem(id: "cto-t1", kind: .toolCall(ToolCall(name: "Read", category: .read, title: "Read Sources/Checkout/CartTotals.swift")), status: .completed, startedAt: ago(3990), completedAt: ago(3989)),
+                        TurnItem(id: "cto-a2", kind: .assistantMessage(text: review, isFinal: true), status: .completed, startedAt: ago(3620), completedAt: ago(3600)),
+                    ]
+                ),
+            ],
+            teammate: Teammate(
+                name: "CTO", handle: "cto", role: "Owns architecture and code review",
+                instructions: "Review for correctness first, then maintainability. Money is integer cents end to end."
+            )
+        )
+
+        let frontend = AgentThread(
+            id: ID.frontend, projectID: ID.site, title: "Frontend engineer", createdAt: ago(86400 * 5), updatedAt: ago(86400 * 5),
+            modelSelection: sonnet, lastVisitedAt: ago(86400 * 5),
+            teammate: Teammate(
+                name: "Frontend engineer", handle: "frontend", role: "Owns the site's UI and accessibility",
+                instructions: "Semantic HTML first; every interactive element works with the keyboard."
+            )
+        )
+        return [cto, frontend, checkout]
     }
 
     nonisolated static let loginAnswer = """

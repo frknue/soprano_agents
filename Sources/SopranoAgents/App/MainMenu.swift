@@ -40,6 +40,7 @@ final class MainMenuController: NSObject, NSMenuItemValidation {
         fileMenu.addItem(commandItem("chat.new", title: "New Thread"))
         fileMenu.addItem(commandItem("chat.newLocal", title: "New Thread in Current Project"))
         fileMenu.addItem(commandItem("chat.newWithoutProject", title: "New Thread Without a Project"))
+        fileMenu.addItem(commandItem("team.new", title: "New Teammate…"))
         fileMenu.addItem(.separator())
         fileMenu.addItem(commandItem("project.open", title: "Open Project…"))
         fileMenu.addItem(commandItem("editor.openFavorite", title: "Open in Editor"))
@@ -114,7 +115,10 @@ final class MainMenuController: NSObject, NSMenuItemValidation {
         threadMenu.addItem(commandItem("git.push", title: "Push"))
         threadMenu.addItem(commandItem("git.createPR", title: "Create Pull Request"))
         threadMenu.addItem(.separator())
+        threadMenu.addItem(commandItem("team.edit", title: "Edit Teammate…"))
+        threadMenu.addItem(.separator())
         threadMenu.addItem(commandItem("thread.delete", title: "Delete Thread…"))
+        threadMenu.addItem(commandItem("team.delete", title: "Delete Teammate…"))
         add(threadMenu, to: main)
 
         let windowMenu = NSMenu(title: "Window")

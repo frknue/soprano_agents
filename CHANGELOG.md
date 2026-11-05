@@ -26,6 +26,19 @@ All notable changes to Soprano Agents are documented here. The format follows
   titles, branch names and commit messages; `providers.opencodePath` if `opencode` is not on
   `PATH`. Settings → Providers shows each agent's status. Statistics, Accounts and word
   completion stay omp's.
+- Team: long-lived omp teammates such as a CTO or a frontend engineer. New Teammate… (the `+` on
+  the sidebar's Team section, or the command palette) sets a name, a handle (`cto`), a role,
+  standing instructions and a home folder (a project or its own). Each teammate is one ongoing
+  conversation you open and chat with; your omp threads and other teammates ask it through the
+  `team_message` tool and get its answer back, and its messages show who sent them ("From
+  thread “…”", click to open). Teammates remember: every request is in their conversation,
+  `team_activity` answers "what did you do today?" from that record, and each one has its own
+  long-term memory (omp's Mnemopi backend). "Also make available to terminal omp" writes the
+  persona to `~/.omp/agent/agents/<handle>.md` so terminal omp can start a fresh copy of it.
+  Edit / Delete Teammate… from its right-click menu or the palette. Teammates can grow the team
+  themselves: with the `team_create` tool a teammate adds a new one (name, role, instructions,
+  home project) when you ask it to or when work needs an owner nobody covers, and can message it
+  right away.
 - Thread inbox sidebar: search (titles, branches, messages), project filter, Add project, New
   thread (⌘N, ⇧⌘N, ⌃⌘N), collapsible Pinned, Working, Blocked, Failed, Done and Idle sections
   at the top with live status pills (Working, Approval, Input, Failed, Done; reading a thread

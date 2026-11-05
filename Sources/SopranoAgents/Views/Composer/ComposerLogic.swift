@@ -84,16 +84,21 @@ enum ModelChoice {
         ModelSelection(provider: provider, model: model.slug, options: supportedOptions(current.options, for: model))
     }
 
-    /// The agent a thread is locked to: its provider once it has turns (switching would start a
-    /// fresh conversation with another CLI). nil for drafts and turn-less threads.
+    /// The agent a thread is locked to: omp for a teammate's thread (teammates are omp-only),
+    /// else its provider once it has turns (switching would start a fresh conversation with
+    /// another CLI). nil for drafts and turn-less threads.
     static func lockedProvider(of thread: AgentThread?) -> ProviderKind? {
-        guard let thread, !thread.turns.isEmpty else { return nil }
+        guard let thread else { return nil }
+        if thread.teammate != nil { return .omp }
+        guard !thread.turns.isEmpty else { return nil }
         return thread.modelSelection.provider
     }
 
-    /// Why `kind` cannot be picked in a thread locked to `locked`; nil when it can.
-    static func lockReason(_ kind: ProviderKind, lockedTo locked: ProviderKind?) -> String? {
+    /// Why `kind` cannot be picked in a thread locked to `locked` (`teammate`: a teammate's
+    /// thread); nil when it can.
+    static func lockReason(_ kind: ProviderKind, lockedTo locked: ProviderKind?, teammate: Bool = false) -> String? {
         guard let locked, locked != kind else { return nil }
+        if teammate { return "Teammates run on \(locked.displayName)." }
         return "This thread runs on \(locked.displayName); start a new thread to use \(kind.displayName)."
     }
 

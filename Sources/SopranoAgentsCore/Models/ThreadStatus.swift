@@ -80,9 +80,10 @@ public enum InboxSection: String, Sendable, Hashable, CaseIterable {
         }
     }
 
-    /// Archived threads belong to no section (Settings › Archive lists them).
+    /// Archived threads belong to no section (Settings › Archive lists them); neither do teammate
+    /// threads (the sidebar's Team section lists them).
     public static func of(_ thread: AgentThread) -> InboxSection? {
-        if thread.archivedAt != nil { return nil }
+        if thread.archivedAt != nil || thread.teammate != nil { return nil }
         if thread.pinnedAt != nil { return .pinned }
         if thread.settledAt != nil { return .settled }
         if let turn = thread.activeTurn {

@@ -1005,7 +1005,8 @@ final class ComposerViewController: NSViewController, FocusRegionController, NST
         guard popoverKind != .model else { return closePopover() }
         let statuses = Dictionary(uniqueKeysWithValues: ProviderKind.allCases.map { ($0, engine.status(of: $0)) })
         let locked = ModelChoice.lockedProvider(of: currentThread)
-        let content = ModelPickerContent(selection: selection, statuses: statuses, lockedProvider: locked) { [weak self] selection in
+        let isTeammate = currentThread?.teammate != nil
+        let content = ModelPickerContent(selection: selection, statuses: statuses, lockedProvider: locked, isTeammate: isTeammate) { [weak self] selection in
             self?.setModelSelection(selection)
         }
         present(.model, content: content, anchor: modelChip, side: .above, alignment: .leading) { [weak self] open in

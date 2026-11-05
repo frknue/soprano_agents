@@ -266,8 +266,8 @@ final class DialogController {
     }
 }
 
-/// `border-t bg-muted/72` strip under the dialog body.
-private final class DialogFooterView: PaletteView {
+/// `border-t bg-muted/72` strip under the dialog body (also the Teammate dialog's footer).
+final class DialogFooterView: PaletteView {
     private let rule = CALayer()
 
     override init(frame frameRect: NSRect) {

@@ -17,9 +17,16 @@ enum SidebarLayout {
     static let emptyHeight: CGFloat = 64
     static let emptyWithButtonHeight: CGFloat = 92
     static let subagentHeight: CGFloat = 30
+    /// Team section: header like a shelf, two-line teammate rows, the empty section's hint.
+    static let teamHeaderHeight: CGFloat = 33
+    static let teammateHeight: CGFloat = 48
+    static let teamHintHeight: CGFloat = 28
 
     static func height(of item: SidebarItem) -> CGFloat {
         switch item {
+        case .teamHeader: teamHeaderHeight
+        case .teammate: teammateHeight
+        case .teamHint: teamHintHeight
         case let .card(row): row.hasMetaLine ? cardHeight : compactCardHeight
         case .slim: slimHeight
         case .subagent: subagentHeight

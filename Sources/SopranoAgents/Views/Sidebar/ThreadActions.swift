@@ -39,7 +39,7 @@ enum ThreadActions {
 
     /// After the open thread goes away, show a draft in its project (an open statistics board
     /// stays).
-    private static func leave(_ thread: AgentThread, state: WorkspaceState) {
+    static func leave(_ thread: AgentThread, state: WorkspaceState) {
         guard state.selectedThreadID == thread.id else { return }
         state.select(.draft(projectID: thread.projectID), closingStatistics: false)
     }
@@ -50,9 +50,10 @@ enum ThreadActions {
         leave(thread, state: state)
     }
 
-    /// Confirms, then deletes.
+    /// Confirms, then deletes. A teammate's thread goes through `TeamActions.delete`.
     static func delete(_ threadID: String, engine: AgentEngine, state: WorkspaceState, window: NSWindow?) {
         guard let thread = engine.thread(threadID) else { return }
+        if thread.teammate != nil { return TeamActions.delete(threadID, engine: engine, state: state, window: window) }
         Task { @MainActor in
             let confirmed = await Dialogs.confirm(
                 title: "Delete thread \"\(thread.title)\"?",
@@ -89,7 +90,7 @@ enum ThreadActions {
     }
 
     /// The thread action menu, in display order. `rename` starts the inline rename of whichever
-    /// surface opened the menu.
+    /// surface opened the menu. A teammate's thread gets the teammate menu (`TeamActions.menu`).
     static func menu(
         for threadID: String,
         engine: AgentEngine,
@@ -98,6 +99,7 @@ enum ThreadActions {
         rename: @escaping @MainActor () -> Void
     ) -> NSMenu? {
         guard let thread = engine.thread(threadID) else { return nil }
+        if thread.teammate != nil { return TeamActions.menu(for: threadID, engine: engine, state: state, window: window) }
         let menu = NSMenu()
         menu.autoenablesItems = false
 

@@ -58,6 +58,16 @@ struct ComposerModelChoiceTests {
         #expect(ModelChoice.lockReason(.omp, lockedTo: nil) == nil)
     }
 
+    @Test func teammatesStayOnOmpEvenWithoutTurns() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        var thread = AgentThread(id: "cto", projectID: nil, title: "CTO", createdAt: now, modelSelection: ModelSelection(provider: .omp, model: "anthropic/claude-opus-5-5"))
+        thread.teammate = Teammate(name: "CTO", handle: "cto", role: "", instructions: "")
+        let locked = ModelChoice.lockedProvider(of: thread)
+        #expect(locked == .omp)
+        #expect(ModelChoice.lockReason(.opencode, lockedTo: locked, teammate: true) == "Teammates run on omp.")
+        #expect(ModelChoice.lockReason(.omp, lockedTo: locked, teammate: true) == nil)
+    }
+
     @Test func unknownOptionsAndInvalidValuesAreDropped() {
         let options = ModelChoice.supportedOptions(["effort": "turbo", "fastMode": "yes", "serviceTier": "flex", "verbosity": "low"], for: opus)
         #expect(options.isEmpty)

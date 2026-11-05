@@ -17,13 +17,16 @@ private func naturalWidth(of rendering: MarkdownRendering, limit: CGFloat) -> CG
 
 /// A user message row: right-aligned bubble (`max-w-[80%] rounded-2xl p-3
 /// bg-message`), attachments above the text, long text folded at 176 pt with "Show full message",
-/// "↪ Steer" marker, hover footer with timestamp, "Edit from here" and "Copy message".
+/// "↪ Steer" marker, "From CTO" / "From thread “…”" above messages another thread sent (click
+/// opens it), hover footer with timestamp, "Edit from here" and "Copy message".
 final class UserMessageRowView: TimelineRowView {
     static let collapsedHeight: CGFloat = 176
     static let footerHeight: CGFloat = 24
 
     private let steerIcon = TimelineIconView(symbol: TimelineIcon.redo, size: 11)
     private let steerLabel = NSTextField.timelineLabel("Steer", size: Typography.smallSize)
+    /// Who sent it when it was not the user (`UserMessage.sender`).
+    private let senderButton = TimelineButton(variant: .inline(muted: true), height: 16)
     private let bubble = PaletteFill(role: .messageSurface, radius: Radius.xxl)
     private let textClip = FlippedView()
     private let markdown = MarkdownView(frame: .zero)
@@ -40,7 +43,7 @@ final class UserMessageRowView: TimelineRowView {
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
-        for view in [steerIcon, steerLabel, bubble, footer] as [NSView] { addSubview(view) }
+        for view in [steerIcon, steerLabel, senderButton, bubble, footer] as [NSView] { addSubview(view) }
         bubble.addSubview(textClip)
         textClip.wantsLayer = true
         textClip.layer?.masksToBounds = true
@@ -59,6 +62,10 @@ final class UserMessageRowView: TimelineRowView {
             guard let self, let turnID = model?.turnID else { return }
             delegate?.timelineEditFromHere(turnID: turnID)
         }
+        senderButton.onClick = { [weak self] in
+            guard let self, let sender = model?.message.sender else { return }
+            delegate?.timelineOpenThread(sender.threadID)
+        }
         applyPalette(palette)
     }
 
@@ -71,6 +78,12 @@ final class UserMessageRowView: TimelineRowView {
         let isSteer = model.turnID == nil
         steerIcon.isHidden = !isSteer
         steerLabel.isHidden = !isSteer
+        if let sender = model.message.sender {
+            senderButton.title = Self.senderLabel(sender)
+            senderButton.toolTip = "Open \(sender.kind == .teammate ? sender.name : "“\(sender.name)”")"
+            senderButton.applyPalette(senderButton.palette)
+        }
+        senderButton.isHidden = model.message.sender == nil
         timeLabel.stringValue = TimelineFormat.timestamp(model.message.createdAt)
         timeLabel.toolTip = TimelineFormat.tooltip(model.message.createdAt)
         editButton.isHidden = model.turnID == nil || !model.editable
@@ -88,14 +101,31 @@ final class UserMessageRowView: TimelineRowView {
         }
     }
 
+    /// "From CTO" for a teammate, "From thread “Fix checkout totals”" for a thread.
+    static func senderLabel(_ sender: MessageSender) -> String {
+        switch sender.kind {
+        case .teammate: "From \(sender.name)"
+        case .thread: "From thread “\(sender.name)”"
+        }
+    }
+
     override func layoutRow(width: CGFloat) -> CGFloat {
         guard let model else { return 0 }
         var y: CGFloat = 0
         let isSteer = model.turnID == nil
+        // Marker line over the bubble: "↪ Steer" and the sender, right-aligned.
+        var lineRight = width - 4
+        if !senderButton.isHidden {
+            let senderWidth = min(senderButton.fittingWidth, floor(width * 0.8))
+            senderButton.frame = NSRect(x: lineRight - senderWidth, y: 0, width: senderWidth, height: 16)
+            lineRight = senderButton.frame.minX - 10
+        }
         if isSteer {
             let labelWidth = steerLabel.textFitWidth
-            steerLabel.frame = NSRect(x: width - 4 - labelWidth, y: 0, width: labelWidth, height: 16)
+            steerLabel.frame = NSRect(x: lineRight - labelWidth, y: 0, width: labelWidth, height: 16)
             steerIcon.frame = NSRect(x: steerLabel.frame.minX - 4 - 12, y: 2, width: 12, height: 12)
+        }
+        if isSteer || !senderButton.isHidden {
             y = 16 + 4
         }
         let maxBubble = floor(width * 0.8)
@@ -442,6 +472,78 @@ final class EmptyRowView: TimelineRowView {
 
     override func applyPalette(_ palette: Palette) {
         label.textColor = palette.mutedForeground
+    }
+}
+
+/// An empty teammate thread: avatar, name, role and how to reach it, centered in the lane above
+/// the composer ("Ask CTO anything. Your threads can message @cto too.").
+final class TeammateIntroRowView: TimelineRowView {
+    private let avatar = TeammateAvatarView()
+    private let nameLabel = NSTextField.timelineLabel("", size: 16, weight: .semibold)
+    private let roleLabel = NSTextField.timelineLabel("", size: Typography.bodySize)
+    private let hintLabel = NSTextField.timelineLabel("", size: Typography.smallSize)
+    private var contentHeight: CGFloat = 0
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        for label in [nameLabel, roleLabel, hintLabel] {
+            label.alignment = .center
+            label.lineBreakMode = .byTruncatingTail
+        }
+        hintLabel.lineBreakMode = .byWordWrapping
+        hintLabel.maximumNumberOfLines = 2
+        hintLabel.cell?.wraps = true
+        for view in [avatar, nameLabel, roleLabel, hintLabel] as [NSView] { addSubview(view) }
+        applyPalette(palette)
+    }
+
+    override func configure(_ row: TimelineRow) {
+        super.configure(row)
+        guard case let .teammateIntro(model) = row.content else { return }
+        avatar.configure(name: model.name, handle: model.handle)
+        nameLabel.stringValue = model.name
+        roleLabel.stringValue = model.role
+        roleLabel.isHidden = model.role.isEmpty
+        hintLabel.stringValue = "Ask \(model.name) anything. Your threads can message @\(model.handle) too."
+    }
+
+    override func layoutRow(width: CGFloat) -> CGFloat {
+        place(width: width, height: bounds.height)
+        return contentHeight
+    }
+
+    override func layout() {
+        super.layout()
+        place(width: bounds.width, height: bounds.height)
+    }
+
+    /// Stacks avatar, name, role and hint, centered in `height` (the visible lane).
+    private func place(width: CGFloat, height: CGFloat) {
+        let textWidth = min(width, 420)
+        let x = (width - textWidth) / 2
+        let hintHeight = ceil(hintLabel.cell?.cellSize(forBounds: NSRect(x: 0, y: 0, width: textWidth, height: 1000)).height ?? 16)
+        var total: CGFloat = 48 + 14 + 22
+        if !roleLabel.isHidden { total += 4 + 20 }
+        total += 10 + hintHeight
+        contentHeight = total
+        var y = max(0, (height - total) / 2)
+        avatar.frame = NSRect(x: (width - 48) / 2, y: y, width: 48, height: 48)
+        y += 48 + 14
+        nameLabel.frame = NSRect(x: x, y: y, width: textWidth, height: 22)
+        y += 22
+        if !roleLabel.isHidden {
+            y += 4
+            roleLabel.frame = NSRect(x: x, y: y, width: textWidth, height: 20)
+            y += 20
+        }
+        y += 10
+        hintLabel.frame = NSRect(x: x, y: y, width: textWidth, height: hintHeight)
+    }
+
+    override func applyPalette(_ palette: Palette) {
+        nameLabel.textColor = palette.foreground
+        roleLabel.textColor = palette.mutedForeground
+        hintLabel.textColor = palette.mutedForeground.timelineAlpha(0.8)
     }
 }
 

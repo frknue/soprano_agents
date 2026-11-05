@@ -34,7 +34,8 @@ swift test
 | `Sources/SopranoAgentsCore/Git/` (rest) | Git | `GitRunner` (the only place that spawns git), `LiveGitService` (checkpoints, diffs, status, branches, worktrees, commit/push/PR via `gh`), parsers. |
 | `Sources/SopranoAgents/Theme/` | Shared kit | `Palette` + `PaletteCenter`, `Typography`, `Metrics`, `Radius`, `Icon`, `PaletteView`, `InteractiveView`, `GhostIconButton`, `TextButton`, `KbdView`. |
 | `Sources/SopranoAgents/Shell/`, `App/`, `Views/Palette/`, `Views/Settings/`, `Notifications/`, `Commands/AppCommand.swift`, `ShellCommands.swift` | Shell | App delegate, menus, window, workspace layout, `WorkspaceState`, settings (`SettingsCenter`, resolver, template), keymap + router, `Dialogs`, command palette, settings screen, notifications, snapshot harness. |
-| `Sources/SopranoAgents/Views/Sidebar/`, `Views/Chat/ChatHeaderView.swift`, `SidebarCommands.swift` | Sidebar | Thread inbox (with subagent rows under their thread's card, `SubagentActions`), chat header + title-bar toggles. |
+| `Sources/SopranoAgents/Views/Sidebar/`, `Views/Chat/ChatHeaderView.swift`, `SidebarCommands.swift` | Sidebar | Thread inbox (with subagent rows under their thread's card, `SubagentActions`), the Team section (`SidebarTeamCells`), chat header + title-bar toggles. |
+| `Sources/SopranoAgents/Views/Team/`, `Commands/TeamCommands.swift` | Team | `TeamActions` (New / Edit / Delete Teammate, the teammate menu), `TeammateDialog`, `TeammateAvatarView`. |
 | `Sources/SopranoAgents/Views/Timeline/`, `TimelineCommands.swift` | Timeline | Message timeline, Markdown renderer, work log, cards. |
 | `Sources/SopranoAgents/Views/Composer/`, `ComposerCommands.swift` | Composer | Composer, pickers, context meter + card, `/` command menu, side-question panel, draft hero + context strip. |
 | `Sources/SopranoAgents/Views/Panels/`, `PanelCommands.swift` | Panels | Right panel (tabs, launcher; Diff, Files explorer, file viewer and terminal surfaces), terminal drawer, `ThreadTerminalStore` (every terminal of the window), Thread details card (editor, scripts, branch, git actions). |
@@ -70,7 +71,8 @@ Views read `projects`, `threads`, `thread(_:)`, `project(_:)`, `status(of:)`, `s
   `runGitAction`, `importAttachment`, `refreshProviders`, `shutdown`, `canCompact`, `compact`,
   `rememberCommands`, `loadCommands(forThread:)`, `loadCommands(forDraft:projectID:)`,
   `steerSubagent`, `cancelSubagent`, `askSideQuestion`, `cancelSideQuestion`,
-  `loadSideQuestions`, `restoreSideQuestions`. Reads: `subagent(_:_:)`, `sideQuestions(_:)`,
+  `loadSideQuestions`, `restoreSideQuestions`, `createTeammate`, `updateTeammate`. Reads:
+  `subagent(_:_:)`, `sideQuestions(_:)`, `team`, `teammateThread(handle:)`, `teammateDraft(_:)`,
   `workingDirectory(of:)`, `workspaceKeys`, `workspaceLocation`,
   `workspaceFiles`, `readWorkspaceFile`, `workspaceFileURL` (all by `WorkspaceRef`: `.thread(id)`
   or `.draft(projectID:)`, the project root a "Current checkout" thread will use; `key` is the
@@ -78,7 +80,7 @@ Views read `projects`, `threads`, `thread(_:)`, `project(_:)`, `status(of:)`, `s
   `usageHistory(_:sync:)`, `usageFolderTitles()`.
   Contracts in the doc comments of `AgentEngine.swift`, `AgentEngine+Turns.swift`,
   `AgentEngine+Files.swift`, `AgentEngine+Workspace.swift`, `AgentEngine+Commands.swift`,
-  `AgentEngine+SideQuestions.swift` and `AgentEngine+Usage.swift`.
+  `AgentEngine+SideQuestions.swift`, `AgentEngine+Team.swift` and `AgentEngine+Usage.swift`.
 
 Engine behavior:
 - Workspace: an agent only ever runs in the thread's working directory. Projectless threads get
@@ -202,6 +204,45 @@ Engine behavior:
   superseded waiting one null; a request waits up to 155 s, omp's own budget for a cold daemon,
   unless the next keystroke cancels it). A helper that exits restarts with the next prediction, one that
   fails to start is not retried for 30 s, one idle for 10 minutes is stopped; feedback never starts it.
+- Team (`AgentEngine+Team.swift`, `TeamTools.swift`, `Models/Team.swift`): a teammate is a
+  thread carrying `AgentThread.teammate` (name, unique `handle`, role, instructions,
+  `exportsToOmp`); its conversation, model, runtime mode, approvals and checkpoints are the
+  thread's, its home folder the thread's working directory (a project root, or its scratch
+  folder). Teammates stay on omp (`setModelSelection` ignores another provider), never sit in an
+  inbox section, and `deleteThread` removes their files. `createTeammate` makes the empty thread
+  on the default omp model; `updateTeammate` re-validates and, when persona or home changed, sets
+  `ThreadRuntime.relaunchRequested` so the next turn's `ensureSession` starts a new process
+  (resuming) between turns. Every omp conversation's `SessionConfig` comes from
+  `sessionConfig(for:)`: `hostTools` = `TeamTools.definitions` (nothing for a normal thread while
+  the team is empty; a teammate always gets `team_list`, `team_activity` and `team_create`,
+  `team_message` once others exist; the `to` enum lists the other handles, so `refreshTeamTools`
+  re-sends them to every live omp session when the team changes). A teammate also gets
+  `<data>/team/<thread>/persona.md` (`--append-system-prompt`: who it is, its instructions, the
+  team rules) and `memory.yml` (`--config`: omp's Mnemopi memory backend with `scoping: global`
+  and its own `memory/mnemopi.db`, so each teammate keeps a private long-term memory), both
+  rewritten at every launch. Messages to a teammate reach omp with a header
+  (`TeamTools.providerText`: "[Thu 2026-11-05 14:02 · from the user's thread “…”]", plus a
+  reminder that the final answer is the reply; slash commands unchanged). Host tool calls
+  (`ProviderEvent.hostToolCall`) are served in `runtime.hostToolTasks` and answered with
+  `ProviderSession.finishHostTool`; `hostToolCancelled` or the session's end cancels them.
+  `team_message {to, message}` delivers a `UserMessage` with `sender` through `deliver(…, mode:
+  .queue)` (its own turn, queued behind running work, never a steer) and waits in
+  `runtime.teamWaits` until that turn ends or yields (`resolveTeamWaits`, after the turn's
+  checkpoint so the reply names its changed files; `TeamTools.reply`); a withdrawn message, a
+  deleted teammate or a failed turn answers with an error. It refuses messaging oneself and a
+  teammate that waits (directly or through others) on the caller. Cancelling the call withdraws
+  the queued message or interrupts the turn working on it. `team_list` reports handle, role,
+  status and home; `team_activity {teammate?, since?, until?}` lists the turns a teammate's
+  thread started in the period (sender, request, answer, changed files, team messages it sent).
+  `team_create {name, role, instructions?, handle?, home?}` (served only for a teammate) runs
+  `createTeammate` like the dialog: the handle defaults to `suggestedHandle(name)`, `home` names a
+  project by path or unique title (default: its own folder), validation errors come back as the
+  tool's error, and the caller can message the new teammate as soon as the result returns.
+  With `EngineEnvironment.ompAgentsDirectory` set (the app: `~/.omp/agent/agents`; tests and
+  fixtures: nil) an opted-in teammate is also written to `<handle>.md` as an omp task agent
+  (`TeamTools.ompAgentFile`, marked with its thread id; a file without that mark is never
+  overwritten or deleted: the save returns a `warning`); handle changes, opting out and deletion
+  move or remove it.
 
 ### Providers (Core/Providers)
 `ProviderDriver` creates `ProviderSession`s, probes the CLI (`probe()` → version, health,
@@ -324,6 +365,15 @@ with turns keeps its agent.
 Traces: `Tests/SopranoAgentsTests/Fixtures/omp-ask-write-edit-bash.jsonl`, `omp-builtin-yield.jsonl`
 (`/context`, then an async bash job that yields, wakes the agent and settles), `omp-subagent.jsonl`
 (a detached `sonic` subagent steered mid-run that gets a background-job notice and completes).
+Teammates and host tools: `SessionConfig.systemPromptFile` → `--append-system-prompt <file>`,
+`configOverlays` → `--config <file>` after the app's own; `hostTools` go out as `set_host_tools
+{tools:[{name, label, description, parameters, loadMode:"essential"}]}` in the handshake (after
+`set_subagent_subscription`, `try?`) and on `setHostTools`. omp asks with `host_tool_call {id,
+toolCallId, toolName, arguments}` (before the call's `tool_execution_start`) → `hostToolCall`;
+`finishHostTool` answers `host_tool_result {id, result:{content:[{type:"text", text}]},
+isError?}` once per pending call; `host_tool_cancel {targetId}` → `hostToolCancelled`, and a
+restart or the process's end cancels every pending call. The mapper titles `team_message` calls
+"Message to <handle>" (category subagent, input = the message, output = the reply).
 
 **OpenCode** — OpenCode 2.x's v2 HTTP API (`GET /openapi.json` on the server describes it) on
 OpenCode's background service (`opencode serve --service`), the server the `opencode` TUI and CLI
@@ -506,6 +556,9 @@ location chip (right-aligned before the title-bar toggles) shows `WorkspaceLocat
 (`repo/sub/folder`, the `~` path outside git, "Scratch") and the branch, tooltip with kind and
 full path, click toggles the thread details; it reloads on workspace, folder, branch or running
 changes and app activation, squeezes to 160 pt before the breadcrumb, and hides below that.
+A teammate's thread (`AgentThread.teammate`) reads avatar · name · role (muted, truncating first)
+instead of project / title; its title menu is `TeamActions.menu` and double-click opens Edit
+Teammate (no inline rename); the location chip shows its home folder.
 `RightPanelViewController` hosts the tab strip ("+" = native menu: Terminal, Files, Diff), the
 launcher (`T`/`F`/`D` while it has focus; Terminal and Files need a workspace, so only a
 projectless draft disables them) and one controller per surface kind: `DiffSurfaceViewController`
@@ -608,7 +661,7 @@ above what was recorded before it.
 
 ### Commands (`Commands/AppCommand.swift`)
 Every user action is an `AppCommand` registered once at launch from its module's
-`…Commands.all` (`ShellCommands`, `SidebarCommands`, `TimelineCommands`, `ComposerCommands`,
+`…Commands.all` (`ShellCommands`, `SidebarCommands`, `TeamCommands`, `TimelineCommands`, `ComposerCommands`,
 `PanelCommands`, `AccountCommands`, `StatisticsCommands`). Commands are the single source for key bindings, the palette, menus and
 buttons, and the snapshot harness runs them with `--perform <id>`. `CommandContext` carries
 `engine`, `state`, `workspace`, `window`, `focus`, `isTextInput`, and `thread` (selected).
@@ -652,7 +705,9 @@ binding beats a global one. Shortcuts that would need ⌥ use ⌃⌘ instead.
 | `thread.settle` | Settle Thread | not terminal | `cmd+shift+s` | Sidebar |
 | `thread.pin` | Pin Thread | not terminal | `cmd+shift+p` | Sidebar |
 | `thread.rename` | Rename Thread | sidebar | — (F2 in the sidebar list, hard-coded: `KeyChord` has no function keys) | Sidebar |
-| `thread.archive` / `thread.delete` | Archive / Delete Thread | — | — | Sidebar |
+| `thread.archive` / `thread.delete` | Archive / Delete Thread (disabled for a teammate's thread; pin, settle and rename too) | — | — | Sidebar |
+| `team.new` | New Teammate… (the Team section's "+") | — | — | Team |
+| `team.edit` / `team.delete` | Edit / Delete Teammate… (the selected teammate; delete confirms, naming it) | — | — | Team |
 | `thread.copyReference` | Copy Thread Reference | not terminal | `cmd+shift+c` | Sidebar |
 | `sidebar.search` | Search Threads | global | — | Sidebar |
 | `sidebar.filterProjects` | Filter Threads by Project | global | — | Sidebar |
@@ -735,6 +790,27 @@ router as global). A right-panel terminal tab is focus region `terminal`, like t
   failed, stopped `stop.circle`), name, "agent · latest intent" (else description or
   assignment), live run time. A selected subagent stays listed under a closed disclosure; its
   row, not the thread's, is highlighted, and its thread stays unread until opened itself.
+- Team (sidebar, above Pinned; hidden while searching, ignores the project filter): "Team N"
+  header with a "+" (New Teammate…), then one 48 pt row per `engine.team` thread in creation
+  order — a 24 pt avatar circle with the name's initial (hue from the handle among the palette's
+  `projectIconColors`), name over role, the usual status pill or relative time, "⋯" on hover.
+  Empty, it shows "Create a teammate to chat with and delegate to". Click opens the thread like
+  any other, double-click / F2 edits, right-click is the teammate menu (Edit Teammate…, Mark
+  unread, Copy ▸ Handle / Path / Thread ID, Delete Teammate…). Teammates come first in the
+  thread order (↑/↓, ⇧⌘[ / ⇧⌘], ⌃1…⌃9) and never appear in the inbox sections
+  (`InboxSection.of` is nil for them). The New / Edit Teammate dialog (`TeammateDialog`, an
+  `OverlayWindow` card) has Name and Handle side by side (the handle follows
+  `Teammate.suggestedHandle` until edited, `Teammate.handleProblem` shows under it and disables
+  Save), Role, Instructions (88 pt, scrolls), Home folder (projects or "Own folder (no
+  project)") and the "Also make available to terminal omp" switch; engine errors show above the
+  buttons, a save `warning` in an alert after it closes. The model picker locks teammates to omp
+  ("Teammates run on omp.").
+- Messages from other threads (timeline): a user message or steer with `UserMessage.sender`
+  shows "From CTO" (`.teammate`) or "From thread “Fix checkout totals”" (`.thread`) muted above
+  its bubble; clicking it opens the sender when it still exists. A teammate's thread without
+  turns shows `TeammateIntroRowView` (avatar, name, role, "Ask CTO anything. Your threads can
+  message @cto too.") centered above the composer instead of "Send a message to start the
+  conversation.".
 - Work log (`chat.workLog`, ⇧⌘D toggles): `detailed` (default) opens every "Worked for" fold,
   work group and file diff; a running turn's steps show as an open group, the running one
   shimmering and expandable like the rest (its group header collapses to the live row; between
@@ -756,7 +832,7 @@ router as global). A right-panel terminal tab is focus region `terminal`, like t
 
 ## Verification harness
 
-`SopranoAgents snapshot --out <png> [--fixture demo|running|stopping|editing|approval|input|failed|background|answered|rechecked|subagents|subagent|draft|empty]
+`SopranoAgents snapshot --out <png> [--fixture demo|running|stopping|editing|approval|input|failed|background|answered|rechecked|subagents|subagent|draft|empty|team|teammate]
 [--size 1440x900] [--appearance light|dark] [--theme <id>] [--hide-sidebar] [--details]
 [--terminal] [--right-panel] [--diff thread|turn:<n>|uncommitted] [--open-file <path>]… [--perform <command id>]…
 [--settings general|providers|accounts|text-generation|worktrees|notifications|keybindings|archive|about]
@@ -801,6 +877,14 @@ then the recap with the changed files;
 `--fixture subagents` adds and selects a thread whose yielded turn started two subagents
 (running Reader, finished Scout: card disclosure "1/2" open, two subagent rows); `--fixture
 subagent` selects Reader (its run with a steer, "Message Reader", Stop).
+`--fixture team` adds two teammates — CTO (`cto`, two turns: one from the user, one sent by the
+thread "Fix checkout totals", answered with a review) and Frontend engineer (`frontend`, no
+turns) — plus that thread, whose turn holds the "Message to cto" tool call with the reply as its
+output, and selects the CTO; `--fixture teammate` selects Frontend engineer (the empty teammate
+state). `--perform team.new` opens the New Teammate dialog (`--type "Frontend Engineer"` fills
+the name and the handle follows), `--perform team.edit` the Edit dialog of the selected teammate,
+`--click "Fix checkout totals"` opens the messaging thread and `--click "From thread “Fix
+checkout totals”"` follows a sender label.
 `--accounts` installs an
 `AccountFixtures` snapshot before the window is built (default `none`: no usage): `demo`
 has two Claude logins and one Codex login in omp with 5h/7d windows at 9 %, 72 %/93 % and

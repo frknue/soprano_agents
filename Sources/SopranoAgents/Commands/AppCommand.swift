@@ -147,6 +147,7 @@ enum AllCommands {
     static func registerAll(in registry: CommandRegistry = .shared) {
         registry.register(ShellCommands.all)
         registry.register(SidebarCommands.all)
+        registry.register(TeamCommands.all)
         registry.register(TimelineCommands.all)
         registry.register(ComposerCommands.all)
         registry.register(PanelCommands.all)

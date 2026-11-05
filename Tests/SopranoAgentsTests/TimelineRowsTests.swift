@@ -530,6 +530,15 @@ struct TimelineRowsTests {
         #expect(TimelineBuilder.rows(for: nil).isEmpty)
     }
 
+    @Test func anEmptyTeammateThreadIntroducesTheTeammate() {
+        var teammate = thread([])
+        teammate.teammate = Teammate(name: "CTO", handle: "cto", role: "Owns architecture", instructions: "")
+        let rows = TimelineBuilder.rows(for: teammate)
+        #expect(ids(rows) == ["teammate-intro"])
+        guard case let .teammateIntro(intro) = rows.first?.content else { return }
+        #expect(intro == TeammateIntroModel(name: "CTO", handle: "cto", role: "Owns architecture"))
+    }
+
     @Test func aYieldedTurnShowsFinishedWithABackgroundNoteUntilItEnds() {
         var yielded = workedTurn
         yielded.status = .running

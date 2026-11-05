@@ -82,7 +82,7 @@ extension AgentEngine {
                 providerTurnID = nil
             } else {
                 let input = TurnInput(
-                    text: turn.userMessage.text,
+                    text: TeamTools.providerText(turn.userMessage, teammate: current.teammate),
                     attachments: turn.userMessage.attachments,
                     modelSelection: turn.modelSelection,
                     runtimeMode: current.runtimeMode
@@ -154,6 +154,8 @@ extension AgentEngine {
         let drain = status == .completed && !rt.holdQueue
         runtime.track(beforeQuit: capture) { [self] in
             if capture { await captureTurnCheckpoint(threadID, turnID) }
+            // A teammate's reply names the files its turn changed.
+            resolveTeamWaits(threadID)
             if drain { await drainQueue(threadID) }
         }
     }
@@ -194,6 +196,7 @@ extension AgentEngine {
         let drain = outcome == .completed && !runtime.thread(threadID).holdQueue && !thread.queue.isEmpty
         runtime.track(beforeQuit: true) { [self] in
             await captureTurnCheckpoint(threadID, turnID)
+            resolveTeamWaits(threadID)
             if drain { await drainQueue(threadID) }
         }
     }
@@ -230,7 +233,7 @@ extension AgentEngine {
         }
         do {
             try await session.steer(TurnInput(
-                text: message.text,
+                text: TeamTools.providerText(message, teammate: thread.teammate),
                 attachments: message.attachments,
                 modelSelection: thread.modelSelection,
                 runtimeMode: thread.runtimeMode
@@ -274,8 +277,11 @@ extension AgentEngine {
         let rt = runtime.thread(threadID)
         if let starting = rt.starting { return try await starting.value }
         if let session = rt.session {
-            if session.kind == thread.modelSelection.provider { return session }
+            // A teammate whose persona or home changed starts a new process between turns.
+            let relaunch = rt.relaunchRequested && rt.liveTurnID == nil
+            if session.kind == thread.modelSelection.provider, !relaunch { return session }
             // The thread switched agents: the old CLI's session cannot run the new one's turns.
+            rt.relaunchRequested = false
             rt.dropSession()
             await session.close()
             return try await ensureSession(threadID)
@@ -285,18 +291,23 @@ extension AgentEngine {
         guard let driver = environment.drivers[kind] else {
             throw EngineError.providerUnavailable(kind, "No driver is configured.")
         }
+        let config = try sessionConfig(for: thread)
+        rt.relaunchRequested = false
         let session = driver.makeSession()
-        let config = SessionConfig(
-            cwd: workingDirectory(for: thread),
-            modelSelection: thread.modelSelection,
-            runtimeMode: thread.runtimeMode,
-            resumeID: thread.providerThreadID
-        )
         rt.session = session
         rt.consumer = consume(session, threadID: threadID)
         let task = Task<any ProviderSession, any Error> { @MainActor [self] in
             let conversationID = try await session.start(config)
             updateThread(threadID) { $0.providerThreadID = conversationID }
+            // The team may have changed while the process started (`refreshTeamTools` waits for
+            // starting sessions): bring its tools up to date before the first turn.
+            var applied = config.hostTools
+            while session.kind == .omp, let current = self.thread(threadID) {
+                let tools = teamToolDefinitions(for: current)
+                guard tools != applied else { break }
+                await session.setHostTools(tools)
+                applied = tools
+            }
             return session
         }
         rt.starting = task
@@ -339,6 +350,9 @@ extension AgentEngine {
         }
         abortSubagents(threadID)
         interruptSideQuestions(threadID)
+        for key in runtime.hostToolTasks.keys where key.hasPrefix(Self.hostCallKey(threadID, "")) {
+            runtime.hostToolTasks.removeValue(forKey: key)?.cancel()
+        }
         if let session {
             Task { await session.close() }
         }
@@ -417,6 +431,10 @@ extension AgentEngine {
             upsertSideQuestion(record, threadID: threadID)
         case let .sideQuestionDelta(id, delta):
             appendSideQuestionAnswer(id, delta: delta, threadID: threadID)
+        case let .hostToolCall(call):
+            serveHostTool(call, threadID: threadID)
+        case let .hostToolCancelled(id):
+            cancelHostTool(id, threadID: threadID)
         }
     }
 

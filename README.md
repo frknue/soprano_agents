@@ -82,6 +82,14 @@ The installer never restarts a running Soprano Agents; the update applies on the
    tokens and estimated API-equivalent cost over 24h, 7d, 30d, 90d or all time, with a chart per
    hour, day, week or month and breakdowns by model (click one to filter), project and agent. It reads
    omp's own usage records (`omp stats`), so every omp session on this Mac counts.
+11. A team of long-lived omp agents: **New Teammate…** (the `+` on the sidebar's Team section,
+   or the command palette) gives one a name, a handle (`cto`), a role, standing instructions and a
+   home folder (a project or its own). A teammate is a conversation you keep coming back to;
+   your threads and other teammates message it by handle, and messages they sent read
+   "From CTO" / "From thread “…”" (click to open the sender). Optionally it is also written to
+   `~/.omp/agent/agents/<handle>.md`, so terminal omp can start a fresh copy of it. Right-click a
+   teammate for Edit / Delete Teammate…. Teammates can also add teammates themselves (ask your
+   CTO for a frontend engineer); they appear in the Team section like ones you created.
 
 `⌘K` (or `⌘P`) opens the command palette, Soprano's own: every action with its shortcut, threads,
 projects and settings pages. When the app is in the background, finished, failed and
@@ -136,9 +144,9 @@ right-panel tab) has focus.
 | Statistics | `⇧⌘U` | everywhere |
 
 Unbound by default (bind them in Settings): Open settings.json, Archive / Delete
-Thread, Search Threads, Filter Threads by Project, Expand / Collapse All Work, Interrupt, Commit,
-Push, Create PR, Toggle Split Diff View, Toggle Diff File Tree, Maximize Right Panel, Search Files,
-Compact Conversation, Manage Accounts, Refresh Usage.
+Thread, New / Edit / Delete Teammate, Search Threads, Filter Threads by Project, Expand / Collapse
+All Work, Interrupt, Commit, Push, Create PR, Toggle Split Diff View, Toggle Diff File Tree,
+Maximize Right Panel, Search Files, Compact Conversation, Manage Accounts, Refresh Usage.
 
 `⌃A` starts a prefix chord (`prefix+p` = `⌃A`, then `P`); the prefix key and its timeout are
 settings. Chords with `⌥` are left alone so they keep typing characters on layouts that need

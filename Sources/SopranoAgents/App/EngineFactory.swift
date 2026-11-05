@@ -77,7 +77,9 @@ enum EngineFactory {
                     executablePath: { paths.omp },
                     launchAdjustments: { AccountLaunchBridge.ompAdjustments() }
                 ),
-            ]
+            ],
+            ompAgentsDirectory: FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent(".omp/agent/agents", isDirectory: true)
         )
         return AgentEngine(environment: environment, settings: settings)
     }

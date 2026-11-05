@@ -132,14 +132,21 @@ extension AgentEngine {
     /// Captures the pre-turn checkpoint when missing. Exactly `/compact` compacts the
     /// conversation instead (see `compact`). A rewind in progress (`revert`) finishes first.
     public func send(_ threadID: String, text: String, attachments: [Attachment], mode: SendMode = .automatic) async throws {
-        if let reverting = runtime.existingThread(threadID)?.reverting {
-            await reverting.value
-            return try await send(threadID, text: text, attachments: attachments, mode: mode)
-        }
-        guard let thread = thread(threadID) else { throw EngineError.unknownThread(threadID) }
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || !attachments.isEmpty else { throw EngineError.emptyMessage }
-        let message = UserMessage(text: text, attachments: attachments, createdAt: environment.now())
+        try await deliver(threadID, message: UserMessage(text: text, attachments: attachments, createdAt: environment.now()), mode: mode)
+    }
+
+    /// `send` for a prepared message (a team message carries its sender). `isWanted` is checked
+    /// right before the message is placed (after waiting for a rewind or a yielded turn's end):
+    /// false drops it, so a team message withdrawn meanwhile never starts work.
+    func deliver(_ threadID: String, message: UserMessage, mode: SendMode, isWanted: () -> Bool = { true }) async throws {
+        if let reverting = runtime.existingThread(threadID)?.reverting {
+            await reverting.value
+            return try await deliver(threadID, message: message, mode: mode, isWanted: isWanted)
+        }
+        guard let thread = thread(threadID) else { throw EngineError.unknownThread(threadID) }
+        guard isWanted() else { return }
         if Self.isCompaction(message) { try checkCompaction(thread, mode: mode) }
         if thread.isRunning {
             switch mode {
@@ -152,7 +159,7 @@ extension AgentEngine {
         }
         if thread.openTurn != nil {
             await releaseYieldedTurn(threadID)
-            return try await send(threadID, text: text, attachments: attachments, mode: mode)
+            return try await deliver(threadID, message: message, mode: mode, isWanted: isWanted)
         }
         guard let turnID = beginTurn(threadID, message: message, selection: thread.modelSelection) else { return }
         await runTurn(threadID, turnID)
@@ -241,6 +248,7 @@ extension AgentEngine {
 
     public func cancelQueued(_ threadID: String, messageID: String) {
         updateThread(threadID) { $0.queue.removeAll { $0.id == messageID } }
+        resolveTeamWaits(threadID)
     }
 
     /// "Edit from here": rewinds the conversation to before turn `turnID` (provider rollback),
@@ -387,6 +395,7 @@ extension AgentEngine {
             }
         }
         removeThreadRecord(threadID)
+        if let teammate = thread.teammate { teammateDeleted(threadID, teammate) }
 
         let git = environment.git
         let lastOrdinal = thread.turns.map(\.ordinal).max() ?? 0

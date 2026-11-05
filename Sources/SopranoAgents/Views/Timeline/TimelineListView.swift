@@ -144,6 +144,7 @@ final class TimelineListView: NSView {
         case .changedFiles: "changedFiles"
         case .queued: "queued"
         case .empty: "empty"
+        case .teammateIntro: "teammateIntro"
         }
     }
 
@@ -166,6 +167,7 @@ final class TimelineListView: NSView {
         case .changedFiles: ChangedFilesRowView(frame: .zero)
         case .queued: QueuedMessageRowView(frame: .zero)
         case .empty: EmptyRowView(frame: .zero)
+        case .teammateIntro: TeammateIntroRowView(frame: .zero)
         }
     }
 
@@ -307,10 +309,12 @@ final class TimelineListView: NSView {
         }
         let height = heights[index] - row.bottomSpacing
         let frame: NSRect
-        if case .empty = row.content {
+        switch row.content {
+        case .empty, .teammateIntro:
+            // Empty states fill the visible lane above the composer and center themselves.
             let visibleHeight = (clipView?.bounds.height ?? bounds.height) - bottomInset - topPadding
             frame = NSRect(x: laneX, y: topPadding, width: width, height: max(height, visibleHeight))
-        } else {
+        default:
             frame = NSRect(x: laneX, y: offsets[index], width: width, height: height)
         }
         if let configured = configuredRows[row.id], configured.row == row, configured.width == width {

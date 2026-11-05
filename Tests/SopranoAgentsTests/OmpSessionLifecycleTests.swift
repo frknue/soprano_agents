@@ -315,6 +315,50 @@ struct OmpSessionLifecycleTests {
         #expect(args == ["--config", overlay, "--mode", "rpc-ui", "--cwd", fake.directory.path, "--approval-mode", "always-ask"])
     }
 
+    @Test func aTeammateSessionLaunchesWithItsPersonaAndServesHostTools() async throws {
+        let fake = try makeFake()
+        let session = OmpSession(executablePath: { fake.executable })
+        let recorder = Recorder(session)
+        var settings = config(cwd: fake.directory.path)
+        settings.systemPromptFile = "/tmp/persona.md"
+        settings.configOverlays = ["/tmp/memory.yml"]
+        settings.hostTools = TeamTools.definitions(others: [Teammate(name: "CTO", handle: "cto", role: "", instructions: "")], callerIsTeammate: true)
+
+        _ = try await session.start(settings)
+        try fake.emit(1, [
+            ["type": "host_tool_call", "id": "host_1", "toolCallId": "toolu_1", "toolName": "team_message", "arguments": ["to": "cto", "message": "status?"]],
+            ["type": "host_tool_call", "id": "host_2", "toolCallId": "toolu_2", "toolName": "team_list", "arguments": [:]],
+            ["type": "host_tool_cancel", "id": "cancel_1", "targetId": "host_2"],
+        ])
+        let cancelled = await recorder.wait { $0.contains(.hostToolCancelled(id: "host_2")) }
+        await session.finishHostTool("host_1", result: HostToolResult(text: "All green."))
+        await session.finishHostTool("host_2", result: HostToolResult(text: "too late"))
+        let answered = await Self.eventually { fake.received("host_tool_result").count == 1 }
+        await session.close()
+
+        let args = try #require(fake.launches().first)
+        #expect(args.suffix(4) == ["--append-system-prompt", "/tmp/persona.md", "--config", "/tmp/memory.yml"])
+        let tools = try #require(fake.received("set_host_tools").first?["tools"]?.arrayValue)
+        #expect(tools.compactMap { $0["name"]?.stringValue } == [TeamTools.message, TeamTools.list, TeamTools.activity, TeamTools.create])
+        #expect(tools.allSatisfy { $0["loadMode"] == "essential" })
+        #expect(cancelled)
+        #expect(recorder.events.contains(.hostToolCall(HostToolCall(id: "host_1", toolCallID: "toolu_1", name: "team_message", arguments: ["to": "cto", "message": "status?"]))))
+        #expect(answered)
+        let result = try #require(fake.received("host_tool_result").first)
+        #expect(result["id"] == "host_1")
+        #expect(result["result"]?["content"]?.arrayValue?.first?["text"] == "All green.")
+        #expect(result["isError"] == nil)
+    }
+
+    nonisolated private static func eventually(_ seconds: Double = 10, _ condition: @Sendable () -> Bool) async -> Bool {
+        let deadline = ContinuousClock.now + .seconds(seconds)
+        while !condition() {
+            if ContinuousClock.now > deadline { return false }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        return true
+    }
+
     @Test func aSavedSessionIsResumedOnlyWhenItsFileExists() async throws {
         let fake = try makeFake()
         let gone = fake.directory.appendingPathComponent("gone.jsonl").path

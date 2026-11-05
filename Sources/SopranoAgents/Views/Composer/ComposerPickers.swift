@@ -12,8 +12,11 @@ final class ModelPickerContent: ComposerPopoverContent {
 
     private let selection: ModelSelection
     private let statuses: [ProviderKind: ProviderStatus]
-    /// Threads with turns keep their agent; drafts and turn-less threads may switch.
+    /// Threads with turns keep their agent; drafts and turn-less threads may switch; teammates
+    /// stay on omp.
     private let lockedProvider: ProviderKind?
+    /// The thread is a teammate's (the lock's reason says so).
+    private let isTeammate: Bool
     private let onSelect: (ModelSelection) -> Void
 
     private var shownProvider: ProviderKind
@@ -32,10 +35,12 @@ final class ModelPickerContent: ComposerPopoverContent {
     /// - Parameters:
     ///   - statuses: every provider's status; the column shows the selection's provider first.
     ///   - lockedProvider: `ModelChoice.lockedProvider(of:)`; other agents' tiles are disabled.
-    init(selection: ModelSelection, statuses: [ProviderKind: ProviderStatus], lockedProvider: ProviderKind?, onSelect: @escaping (ModelSelection) -> Void) {
+    ///   - isTeammate: the thread is a teammate's (omp only).
+    init(selection: ModelSelection, statuses: [ProviderKind: ProviderStatus], lockedProvider: ProviderKind?, isTeammate: Bool = false, onSelect: @escaping (ModelSelection) -> Void) {
         self.selection = selection
         self.statuses = statuses
         self.lockedProvider = lockedProvider
+        self.isTeammate = isTeammate
         self.onSelect = onSelect
         shownProvider = selection.provider
         super.init(frame: .zero)
@@ -54,7 +59,7 @@ final class ModelPickerContent: ComposerPopoverContent {
         for kind in ProviderKind.allCases {
             let tile = ProviderTile(kind: kind)
             // The current provider stays reachable even while it is unavailable.
-            if let reason = ModelChoice.lockReason(kind, lockedTo: lockedProvider) {
+            if let reason = ModelChoice.lockReason(kind, lockedTo: lockedProvider, teammate: isTeammate) {
                 tile.isEnabled = false
                 tile.toolTip = reason
             } else if kind != selection.provider, let reason = Self.unavailableReason(statuses[kind]) {

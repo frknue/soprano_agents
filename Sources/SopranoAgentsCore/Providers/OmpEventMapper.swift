@@ -543,6 +543,15 @@ public struct OmpEventMapper: Sendable {
             return item(.toolCall(ToolCall(name: tool.name, category: .other, title: "Updated tasks", input: Self.inputText(args), output: output)))
         case "ask":
             return nil
+        case TeamTools.message:
+            let to = args["to"]?.nonEmptyString
+            let input = args["message"]?.stringValue ?? Self.inputText(args)
+            return item(.toolCall(ToolCall(name: tool.name, category: .subagent, title: to.map { "Message to \($0)" } ?? "Team message", input: input, output: output)))
+        case TeamTools.list:
+            return item(.toolCall(ToolCall(name: tool.name, category: .other, title: "Looked up the team", input: Self.inputText(args), output: output)))
+        case TeamTools.activity:
+            let who = args["teammate"]?.nonEmptyString
+            return item(.toolCall(ToolCall(name: tool.name, category: .other, title: who.map { "Read \($0)’s activity" } ?? "Read team activity", input: Self.inputText(args), output: output)))
         default:
             return item(.toolCall(ToolCall(name: tool.name, category: .other, title: tool.intent ?? tool.name, input: Self.inputText(args), output: output)))
         }

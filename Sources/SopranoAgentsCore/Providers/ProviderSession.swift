@@ -8,17 +8,76 @@ public struct SessionConfig: Sendable, Hashable {
     public var runtimeMode: RuntimeMode
     /// omp session file to resume (`AgentThread.providerThreadID`); nil = new.
     public var resumeID: String?
+    /// File appended to the provider's system prompt (a teammate's persona and team rules,
+    /// omp `--append-system-prompt`); nil = none.
+    public var systemPromptFile: String?
+    /// Extra provider config files for this conversation only (omp `--config`, after the app's
+    /// own): a teammate's memory settings.
+    public var configOverlays: [String]
+    /// Tools the host serves for this conversation (omp `set_host_tools`); calls arrive as
+    /// `ProviderEvent.hostToolCall`. Providers without host tools ignore them.
+    public var hostTools: [HostToolDefinition]
 
     public init(
         cwd: String,
         modelSelection: ModelSelection,
         runtimeMode: RuntimeMode,
-        resumeID: String? = nil
+        resumeID: String? = nil,
+        systemPromptFile: String? = nil,
+        configOverlays: [String] = [],
+        hostTools: [HostToolDefinition] = []
     ) {
         self.cwd = cwd
         self.modelSelection = modelSelection
         self.runtimeMode = runtimeMode
         self.resumeID = resumeID
+        self.systemPromptFile = systemPromptFile
+        self.configOverlays = configOverlays
+        self.hostTools = hostTools
+    }
+}
+
+/// A tool the app serves to the agent (omp `set_host_tools`).
+public struct HostToolDefinition: Sendable, Hashable {
+    public var name: String
+    public var label: String
+    public var description: String
+    /// JSON Schema of the arguments object.
+    public var parameters: JSONValue
+
+    public init(name: String, label: String, description: String, parameters: JSONValue) {
+        self.name = name
+        self.label = label
+        self.description = description
+        self.parameters = parameters
+    }
+}
+
+/// The agent called a host tool; answer with `ProviderSession.finishHostTool`.
+public struct HostToolCall: Sendable, Hashable {
+    /// The provider's request id (answered with it).
+    public var id: String
+    /// The tool call in the conversation (its timeline item id).
+    public var toolCallID: String?
+    public var name: String
+    public var arguments: JSONValue
+
+    public init(id: String, toolCallID: String?, name: String, arguments: JSONValue) {
+        self.id = id
+        self.toolCallID = toolCallID
+        self.name = name
+        self.arguments = arguments
+    }
+}
+
+/// What a host tool returns to the agent: its text, or an error the agent sees as a failed call.
+public struct HostToolResult: Sendable, Hashable {
+    public var text: String
+    public var isError: Bool
+
+    public init(text: String, isError: Bool = false) {
+        self.text = text
+        self.isError = isError
     }
 }
 
@@ -85,6 +144,11 @@ public enum ProviderEvent: Sendable, Hashable {
     case sideQuestion(SideQuestion)
     /// Append streamed answer text to topic `id`'s latest exchange.
     case sideQuestionDelta(id: String, delta: String)
+    /// The agent called a host tool (`SessionConfig.hostTools`): answer it with
+    /// `ProviderSession.finishHostTool`.
+    case hostToolCall(HostToolCall)
+    /// The provider gave up on host tool call `id` (the turn was stopped): stop serving it.
+    case hostToolCancelled(id: String)
 }
 
 /// What a subagent's provider reports; the engine folds it into `AgentThread.subagents`.
@@ -198,6 +262,13 @@ public protocol ProviderSession: AnyObject, Sendable {
     /// The conversation's side questions as the provider keeps them, newest first.
     func sideQuestions() async throws -> [SideQuestion]
 
+    /// Replaces the host tools of the live conversation (the team changed).
+    func setHostTools(_ tools: [HostToolDefinition]) async
+
+    /// Answers host tool call `id` (`ProviderEvent.hostToolCall`). Nothing happens when the
+    /// call is no longer pending (cancelled, process restarted).
+    func finishHostTool(_ id: String, result: HostToolResult) async
+
     /// Terminates the process. Safe to call twice.
     func close() async
 }
@@ -205,6 +276,9 @@ public protocol ProviderSession: AnyObject, Sendable {
 extension ProviderSession {
     /// Providers that never yield an unsettled turn have nothing to release.
     public func releaseYieldedTurn() async {}
+    /// Providers without host tools ignore them.
+    public func setHostTools(_ tools: [HostToolDefinition]) async {}
+    public func finishHostTool(_ id: String, result: HostToolResult) async {}
 }
 
 /// Creates sessions and probes the installed CLI for one provider.

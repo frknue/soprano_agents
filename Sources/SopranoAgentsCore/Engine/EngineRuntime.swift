@@ -21,6 +21,12 @@ final class EngineRuntime {
     var rememberedCommands: [CommandScope: [ProviderCommand]] = [:]
     /// Scopes a driver was asked for their list this run (`loadCommands`), answered or not.
     var requestedCommands: Set<CommandScope> = []
+    /// Team messages waiting for a teammate's reply, by message id (AgentEngine+Team.swift).
+    var teamWaits: [String: TeamWait] = [:]
+    /// Team messages whose delivery has not placed them in the teammate's thread yet.
+    var teamDeliveries: Set<String> = []
+    /// Host tool calls being served, by `hostCallKey(thread, call id)`.
+    var hostToolTasks: [String: Task<Void, Never>] = [:]
 
     func thread(_ id: String) -> ThreadRuntime {
         if let existing = threads[id] { return existing }
@@ -108,6 +114,9 @@ final class ThreadRuntime {
     var isAskingSideQuestion = false
     /// Stop was pressed while `isAskingSideQuestion`.
     var sideQuestionCancelRequested = false
+    /// The teammate's persona or home changed: its next turn starts a new process (resuming
+    /// the conversation) so the new launch settings apply.
+    var relaunchRequested = false
 
     func dropSession() {
         consumer?.cancel()
@@ -115,6 +124,15 @@ final class ThreadRuntime {
         session = nil
         starting = nil
     }
+}
+
+/// A `team_message` waiting for the teammate's turn on it to end.
+struct TeamWait {
+    /// The thread whose agent asked.
+    var callerThreadID: String
+    /// The teammate's thread.
+    var targetThreadID: String
+    var continuation: CheckedContinuation<HostToolResult, Never>
 }
 
 /// Serializes async operations per key (a working directory) on the main actor.

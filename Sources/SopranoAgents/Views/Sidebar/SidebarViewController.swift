@@ -2,9 +2,10 @@ import AppKit
 import SopranoAgentsCore
 
 /// The thread inbox: 52 pt header with the brand, the search row with
-/// the project filter / add project / new thread buttons, the list (collapsible Pinned, Working,
-/// Blocked, Failed, Done and Idle sections of cards, then the Settled shelf pushed to the bottom)
-/// and the footer with Settings, the Statistics board toggle and the account button.
+/// the project filter / add project / new thread buttons, the list (the Team section with its
+/// teammates and "＋", then collapsible Pinned, Working, Blocked, Failed, Done and Idle sections
+/// of cards, then the Settled shelf pushed to the bottom) and the footer with Settings, the
+/// Statistics board toggle and the account button.
 /// The list is an `NSTableView` of reused cells, so hundreds of threads stay cheap.
 @MainActor
 final class SidebarViewController: NSViewController, FocusRegionController, NSTableViewDataSource, NSTableViewDelegate {
@@ -260,7 +261,7 @@ final class SidebarViewController: NSViewController, FocusRegionController, NSTa
             return
         }
         markSelectedVisitedIfSeen()
-        let next = SidebarListModel.build(threads: engine.threads, projects: engine.projects, options: listOptions)
+        let next = SidebarListModel.list(threads: engine.threads, team: engine.team, projects: engine.projects, options: listOptions)
         updateHeaderButtons()
         if next.map(\.identity) == items.map(\.identity) {
             let changed = IndexSet(next.indices.filter { next[$0] != items[$0] })
@@ -280,10 +281,19 @@ final class SidebarViewController: NSViewController, FocusRegionController, NSTa
     /// One thread's turns changed: re-derive just its row.
     private func refreshRow(of threadID: String) {
         guard isViewLoaded, renamingThreadID == nil,
-              let index = items.firstIndex(where: { $0.thread?.threadID == threadID }),
+              let index = items.firstIndex(where: { $0.threadID == threadID }),
               let thread = engine.thread(threadID) else { return }
         guard state.searchText.isEmpty else {
             reload()
+            return
+        }
+        if let teammate = thread.teammate {
+            // Team rows keep their order: a status change is this row only.
+            let item = SidebarItem.teammate(SidebarListModel.teammateRow(for: thread, teammate: teammate, options: listOptions))
+            guard item != items[index] else { return }
+            items[index] = item
+            tableView.reloadData(forRowIndexes: [index], columnIndexes: [0])
+            updateTimer()
             return
         }
         let projects = Dictionary(engine.projects.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
@@ -366,6 +376,19 @@ final class SidebarViewController: NSViewController, FocusRegionController, NSTa
         let now = engine.environment.now()
         let order = threadOrder
         switch items[row] {
+        case let .teamHeader(count):
+            let cell = reuse("teamHeader") { SidebarTeamHeaderCell(frame: .zero) }
+            cell.configure(count: count)
+            cell.addButton.onClick = { [weak self] in self?.perform("team.new") }
+            return cell
+        case let .teammate(model):
+            let cell = reuse("teammate") { SidebarTeammateCell(frame: .zero) }
+            cell.actions = teamActions
+            cell.configure(model, now: now)
+            cell.jumpHint = jumpHint(for: model.threadID, order: order)
+            return cell
+        case .teamHint:
+            return reuse("teamHint") { SidebarTeamHintCell(frame: .zero) }
         case let .card(model):
             let cell = reuse("card") { SidebarCardCell(frame: .zero) }
             cell.actions = rowActions
@@ -427,6 +450,18 @@ final class SidebarViewController: NSViewController, FocusRegionController, NSTa
         toggleSubagents: { [weak self] threadID in self?.toggleSubagents(threadID) }
     )
 
+    private lazy var teamActions = SidebarTeamActions(
+        select: { [weak self] id in self?.open(id) },
+        edit: { [weak self] id in
+            guard let self else { return }
+            TeamActions.edit(id, engine: engine, state: state, window: view.window)
+        },
+        menu: { [weak self] id in
+            guard let self else { return nil }
+            return TeamActions.menu(for: id, engine: engine, state: state, window: view.window)
+        }
+    )
+
     // MARK: Actions
 
     func open(_ threadID: String) {
@@ -474,7 +509,7 @@ final class SidebarViewController: NSViewController, FocusRegionController, NSTa
     }
 
     private func scrollToThread(_ threadID: String) {
-        guard let index = items.firstIndex(where: { $0.thread?.threadID == threadID }) else { return }
+        guard let index = items.firstIndex(where: { $0.threadID == threadID }) else { return }
         tableView.scrollRowToVisible(index)
     }
 
@@ -542,8 +577,12 @@ final class SidebarViewController: NSViewController, FocusRegionController, NSTa
         }
     }
 
-    /// Inline rename of a row (double-click, F2, "Rename thread").
+    /// Inline rename of a row (double-click, F2, "Rename thread"); a teammate opens Edit Teammate.
     func beginRename(_ threadID: String) {
+        if engine.thread(threadID)?.teammate != nil {
+            TeamActions.edit(threadID, engine: engine, state: state, window: view.window)
+            return
+        }
         guard let index = items.firstIndex(where: { $0.thread?.threadID == threadID }) else { return }
         tableView.scrollRowToVisible(index)
         guard let cell = tableView.view(atColumn: 0, row: index, makeIfNecessary: true) as? SidebarThreadCell else { return }
@@ -570,6 +609,7 @@ final class SidebarViewController: NSViewController, FocusRegionController, NSTa
     private func updateTimer() {
         let working = items.contains { item in
             if case let .subagent(row) = item { return row.status == .running }
+            if let teammate = item.teammate { return teammate.status.isWorking }
             return item.thread?.status.isWorking == true
         }
         let interval: TimeInterval = working ? 1 : 30
@@ -588,6 +628,7 @@ final class SidebarViewController: NSViewController, FocusRegionController, NSTa
         for row in visible.location..<(visible.location + visible.length) {
             let cell = tableView.view(atColumn: 0, row: row, makeIfNecessary: false)
             (cell as? SidebarThreadCell)?.refreshTime(now)
+            (cell as? SidebarTeammateCell)?.refreshTime(now)
             (cell as? SidebarSubagentCell)?.refreshTime(now)
         }
     }
@@ -618,9 +659,12 @@ final class SidebarViewController: NSViewController, FocusRegionController, NSTa
         showsJumpHints = shown
         let order = threadOrder
         tableView.enumerateAvailableRowViews { _, row in
-            guard let cell = tableView.view(atColumn: 0, row: row, makeIfNecessary: false) as? SidebarThreadCell,
-                  let id = cell.row?.threadID else { return }
-            cell.jumpHint = jumpHint(for: id, order: order)
+            let cell = tableView.view(atColumn: 0, row: row, makeIfNecessary: false)
+            if let cell = cell as? SidebarThreadCell, let id = cell.row?.threadID {
+                cell.jumpHint = jumpHint(for: id, order: order)
+            } else if let cell = cell as? SidebarTeammateCell, let id = cell.row?.threadID {
+                cell.jumpHint = jumpHint(for: id, order: order)
+            }
         }
     }
 }

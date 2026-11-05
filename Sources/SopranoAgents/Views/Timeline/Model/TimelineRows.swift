@@ -169,6 +169,13 @@ struct ChecksRowModel: Hashable, Sendable {
     var expanded: Bool
 }
 
+/// What an empty teammate thread shows instead of "Send a message to start the conversation.".
+struct TeammateIntroModel: Hashable, Sendable {
+    var name: String
+    var handle: String
+    var role: String
+}
+
 enum TimelineRowContent: Hashable, Sendable {
     case user(UserRowModel)
     case fold(FoldRowModel)
@@ -189,6 +196,8 @@ enum TimelineRowContent: Hashable, Sendable {
     case changedFiles(ChangedFilesModel)
     case queued(UserMessage)
     case empty
+    /// A teammate's thread without turns: who it is and how to reach it.
+    case teammateIntro(TeammateIntroModel)
 
     /// Rows of the work log: adjacent ones sit flush.
     var isWorkLog: Bool {
@@ -239,6 +248,10 @@ enum TimelineBuilder {
         guard let thread else { return [] }
         var rows: [TimelineRow] = []
         if thread.turns.isEmpty, thread.queue.isEmpty {
+            if let teammate = thread.teammate {
+                let intro = TeammateIntroModel(name: teammate.name, handle: teammate.handle, role: teammate.role)
+                return [TimelineRow(id: "teammate-intro", content: .teammateIntro(intro))]
+            }
             return [TimelineRow(id: "empty", content: .empty)]
         }
         for turn in thread.turns {
@@ -715,7 +728,7 @@ enum TimelineBuilder {
             case .error, .notice, .advisory, .queued: 8
             case let .checks(model): model.expanded ? 8 : 16
             case .backgroundWork: 16
-            case .empty: 0
+            case .empty, .teammateIntro: 0
             }
             rows[index].bottomSpacing = spacing
         }

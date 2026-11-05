@@ -372,6 +372,11 @@ final class TimelineViewController: NSViewController, FocusRegionController, Tim
         NSPasteboard.general.setString(text, forType: .string)
     }
 
+    func timelineOpenThread(_ threadID: String) {
+        guard engine.thread(threadID) != nil else { return }
+        ThreadActions.open(threadID, engine: engine, state: state)
+    }
+
     // MARK: Find in thread
 
     func showFind() {

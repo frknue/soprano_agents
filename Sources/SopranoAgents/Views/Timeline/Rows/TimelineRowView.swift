@@ -19,6 +19,8 @@ protocol TimelineRowDelegate: AnyObject {
     func timelineSendQueuedNow(messageID: String)
     func timelineRemoveQueued(messageID: String)
     func timelineCopy(_ text: String)
+    /// Opens another thread (a message's sender) when it still exists.
+    func timelineOpenThread(_ threadID: String)
 }
 
 /// Day-aware timestamps: "3:42 PM", "yesterday at 3:42 PM",

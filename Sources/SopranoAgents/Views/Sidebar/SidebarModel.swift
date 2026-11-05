@@ -60,8 +60,26 @@ struct SidebarSubagentRow: Equatable {
     let isLast: Bool
 }
 
+/// A teammate in the sidebar's Team section: avatar, name, role, and the thread's status.
+struct SidebarTeammateRow: Equatable {
+    let threadID: String
+    let name: String
+    let handle: String
+    let role: String
+    let status: ThreadStatus
+    /// Relative times count from here when no status pill shows.
+    let activityDate: Date
+    let isSelected: Bool
+}
+
 /// A row of the sidebar list, top to bottom.
 enum SidebarItem: Equatable {
+    /// "Team N  +" header of the Team section (above the inbox).
+    case teamHeader(count: Int)
+    /// A teammate (two-line row with an avatar).
+    case teammate(SidebarTeammateRow)
+    /// The empty Team section's hint.
+    case teamHint
     /// Pinned and status-group threads (78 pt cards).
     case card(SidebarThreadRow)
     /// Settled threads (36 pt rows).
@@ -84,9 +102,22 @@ enum SidebarItem: Equatable {
         }
     }
 
+    var teammate: SidebarTeammateRow? {
+        if case let .teammate(row) = self { return row }
+        return nil
+    }
+
+    /// The thread a row opens: a thread's card or slim row, or a teammate.
+    var threadID: String? {
+        thread?.threadID ?? teammate?.threadID
+    }
+
     /// Identity for incremental reloads: same id = same view kind showing the same thing.
     var identity: String {
         switch self {
+        case .teamHeader: "team"
+        case let .teammate(row): "teammate:\(row.threadID)"
+        case .teamHint: "team-hint"
         case let .card(row): "card:\(row.threadID)"
         case let .slim(row): "slim:\(row.threadID)"
         case let .shelf(section, _, _): "shelf:\(section.rawValue)"
@@ -157,15 +188,45 @@ struct SidebarListOptions: Equatable {
     var subagentDisclosure: [String: Bool] = [:]
 }
 
-/// Builds the sidebar rows: one collapsible section per non-empty group (Pinned, Working,
-/// Blocked, Failed, Done, Idle) at the top, the Settled shelf pushed to the bottom. Searching
-/// replaces the list with matches.
+/// Builds the sidebar rows: the Team section first (`teamItems`), then one collapsible section
+/// per non-empty group (Pinned, Working, Blocked, Failed, Done, Idle), the Settled shelf pushed to
+/// the bottom. Searching replaces the list with matches.
 enum SidebarListModel {
     static let settledInitialCount = 10
     static let settledPageCount = 25
     /// Every section starts open except Settled.
     static let defaultExpandedShelves = Set(InboxSection.allCases).subtracting([.settled])
 
+    /// The whole list: the Team section (hidden while searching), then the inbox (`build`).
+    static func list(threads: [AgentThread], team: [AgentThread], projects: [Project], options: SidebarListOptions) -> [SidebarItem] {
+        let searching = !options.searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let teamPart = searching ? [] : teamItems(team: team, options: options)
+        return teamPart + build(threads: threads, projects: projects, options: options)
+    }
+
+    /// "Team N +" and a row per teammate thread (in `team` order), or the hint when there are none.
+    /// Teammates ignore the project filter: they serve every project.
+    static func teamItems(team: [AgentThread], options: SidebarListOptions) -> [SidebarItem] {
+        let teammates = team.compactMap { thread -> SidebarItem? in
+            guard let teammate = thread.teammate else { return nil }
+            return .teammate(teammateRow(for: thread, teammate: teammate, options: options))
+        }
+        return [.teamHeader(count: teammates.count)] + (teammates.isEmpty ? [.teamHint] : teammates)
+    }
+
+    static func teammateRow(for thread: AgentThread, teammate: Teammate, options: SidebarListOptions) -> SidebarTeammateRow {
+        SidebarTeammateRow(
+            threadID: thread.id,
+            name: teammate.name,
+            handle: teammate.handle,
+            role: teammate.role,
+            status: ThreadStatus.of(thread),
+            activityDate: thread.activityDate,
+            isSelected: thread.id == options.selectedThreadID && options.selectedSubagentID == nil
+        )
+    }
+
+    /// The inbox: status sections and the Settled shelf (teammate threads never appear here).
     static func build(threads: [AgentThread], projects: [Project], options: SidebarListOptions) -> [SidebarItem] {
         let projectsByID = Dictionary(projects.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let scoped = threads.filter { thread in
@@ -238,9 +299,9 @@ enum SidebarListModel {
         return items
     }
 
-    /// Thread ids in list order (previous/next and ⌃1…⌃9 follow it).
+    /// Thread ids in list order, teammates first (previous/next and ⌃1…⌃9 follow it).
     static func threadOrder(_ items: [SidebarItem]) -> [String] {
-        items.compactMap { $0.thread?.threadID }
+        items.compactMap(\.threadID)
     }
 
     static func row(for thread: AgentThread, projects: [String: Project], options: SidebarListOptions) -> SidebarThreadRow {

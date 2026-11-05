@@ -42,13 +42,57 @@ public enum OmpProtocol {
     }
 
     /// `omp --mode rpc-ui --cwd <cwd> --approval-mode <mode> [--model <provider/id>]
-    /// [--thinking <level>] [--resume <session file>]`. `model` nil = omp's configured default.
-    public static func sessionArguments(cwd: String, approvalMode: String, model: String?, thinking: String?, resume: String?) -> [String] {
+    /// [--thinking <level>] [--resume <session file>] [--append-system-prompt <file>]
+    /// [--config <overlay>]…`. `model` nil = omp's configured default.
+    public static func sessionArguments(
+        cwd: String,
+        approvalMode: String,
+        model: String?,
+        thinking: String?,
+        resume: String?,
+        systemPromptFile: String? = nil,
+        configOverlays: [String] = []
+    ) -> [String] {
         var arguments = ["--mode", "rpc-ui", "--cwd", cwd, "--approval-mode", approvalMode]
         if let model, modelSpec(model) != nil { arguments += ["--model", model] }
         if let thinking = thinkingArgument(thinking) { arguments += ["--thinking", thinking] }
         if let resume { arguments += ["--resume", resume] }
+        if let systemPromptFile { arguments += ["--append-system-prompt", systemPromptFile] }
+        for overlay in configOverlays { arguments += ["--config", overlay] }
         return arguments
+    }
+
+    /// `set_host_tools` fields: `{tools: [{name, label, description, parameters, loadMode:
+    /// "essential"}]}`. Essential: the agent sees them without searching for tools.
+    public static func hostToolFields(_ tools: [HostToolDefinition]) -> [String: JSONValue] {
+        let definitions: [JSONValue] = tools.map { tool in
+            [
+                "name": .string(tool.name),
+                "label": .string(tool.label),
+                "description": .string(tool.description),
+                "parameters": tool.parameters,
+                "loadMode": "essential",
+            ]
+        }
+        return ["tools": .array(definitions)]
+    }
+
+    /// `{"type":"host_tool_result","id","result":{"content":[{"type":"text","text"}]},
+    /// "isError"?:true}`.
+    public static func hostToolResult(id: String, _ result: HostToolResult) -> JSONValue {
+        var frame: [String: JSONValue] = [
+            "type": "host_tool_result",
+            "id": .string(id),
+            "result": ["content": [["type": "text", "text": .string(result.text)]]],
+        ]
+        if result.isError { frame["isError"] = true }
+        return .object(frame)
+    }
+
+    /// A `host_tool_call` frame `{id, toolCallId, toolName, arguments}`; nil when malformed.
+    public static func hostToolCall(_ frame: JSONValue) -> HostToolCall? {
+        guard let id = frame["id"]?.nonEmptyString, let name = frame["toolName"]?.nonEmptyString else { return nil }
+        return HostToolCall(id: id, toolCallID: frame["toolCallId"]?.nonEmptyString, name: name, arguments: frame["arguments"] ?? [:])
     }
 
     /// Short-lived catalog process: `omp --mode rpc --no-session --no-extensions --no-skills

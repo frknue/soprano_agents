@@ -243,6 +243,9 @@ public struct EngineEnvironment: Sendable {
     public var usage: any UsageStatisticsService
     /// The composer's typing aids per provider (word completion, spelling preferences).
     public var textAssistants: [ProviderKind: any TextAssistant]
+    /// omp's user agents folder (`~/.omp/agent/agents`), where teammates that opted in are
+    /// exported; nil = never export (tests, fixtures).
+    public var ompAgentsDirectory: URL?
     public var now: @Sendable () -> Date
 
     public init(
@@ -253,6 +256,7 @@ public struct EngineEnvironment: Sendable {
         files: any WorkspaceFileService = LiveWorkspaceFileService(),
         usage: any UsageStatisticsService = OmpUsageStatistics(),
         textAssistants: [ProviderKind: any TextAssistant] = [:],
+        ompAgentsDirectory: URL? = nil,
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.drivers = drivers
@@ -262,6 +266,7 @@ public struct EngineEnvironment: Sendable {
         self.files = files
         self.usage = usage
         self.textAssistants = textAssistants
+        self.ompAgentsDirectory = ompAgentsDirectory
         self.now = now
     }
 }

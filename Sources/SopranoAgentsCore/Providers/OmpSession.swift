@@ -41,6 +41,13 @@ import Foundation
 /// topic as running), `btw_cancel`, `get_btw_history`; `btw_record` frames become
 /// `sideQuestion`, `btw_delta` frames `sideQuestionDelta`. They run beside any prompt.
 ///
+/// Host tools (the team's): `SessionConfig.hostTools` go out as `set_host_tools` in the handshake
+/// of every launch and again on `setHostTools`; a teammate also launches with
+/// `--append-system-prompt` and `--config` (`systemPromptFile`, `configOverlays`). A
+/// `host_tool_call` becomes `hostToolCall` and is answered once with `host_tool_result`
+/// (`finishHostTool`); `host_tool_cancel`, a restart or the process's end report
+/// `hostToolCancelled` for every call still pending.
+///
 /// Commands: `get_available_commands` after the handshake, then every pushed
 /// `available_commands_update` (`commands` events). Context: when a turn ends, `get_state`'s
 /// `contextUsage` is reported as `tokenUsage`. Compaction (`compact()`): the `compact` command,
@@ -78,6 +85,10 @@ public actor OmpSession: ProviderSession {
     private var currentFast = false
     private var approvalMode = ""
     private var pending: [String: OmpUIRequest] = [:]
+    /// Tools the app serves (`set_host_tools`), sent at every launch and on `setHostTools`.
+    private var hostTools: [HostToolDefinition] = []
+    /// Host tool calls reported to the engine and not answered yet (this process only).
+    private var pendingHostCalls: Set<String> = []
     private var activePromptID: String?
     /// The running `compact` request's id (a compaction turn; no prompt is active meanwhile).
     private var compactionID: String?
@@ -120,6 +131,7 @@ public actor OmpSession: ProviderSession {
         }
         self.executable = executable
         self.config = config
+        hostTools = config.hostTools
         mapper = OmpEventMapper(cwd: config.cwd)
         subagents = OmpSubagentMapper(cwd: config.cwd)
         // A saved session whose file is gone (deleted, never written) starts fresh.
@@ -323,6 +335,17 @@ public actor OmpSession: ProviderSession {
         return (data["records"]?.arrayValue ?? []).compactMap(OmpProtocol.sideQuestion)
     }
 
+    public func setHostTools(_ tools: [HostToolDefinition]) async {
+        guard tools != hostTools else { return }
+        hostTools = tools
+        _ = try? await client?.request("set_host_tools", OmpProtocol.hostToolFields(tools))
+    }
+
+    public func finishHostTool(_ id: String, result: HostToolResult) async {
+        guard pendingHostCalls.remove(id) != nil else { return }
+        try? await client?.send(OmpProtocol.hostToolResult(id: id, result))
+    }
+
     public func close() async {
         guard !isClosing else { return }
         isClosing = true
@@ -339,7 +362,11 @@ public actor OmpSession: ProviderSession {
         guard let config, !isClosing, !hasEnded else { throw ProviderError.notStarted }
         let mode = OmpProtocol.approvalMode(runtime)
         let model = OmpProtocol.modelSpec(selection.model) != nil ? selection.model : nil
-        let arguments = OmpProtocol.sessionArguments(cwd: config.cwd, approvalMode: mode, model: model, thinking: selection.effort, resume: resume)
+        let arguments = OmpProtocol.sessionArguments(
+            cwd: config.cwd, approvalMode: mode, model: model, thinking: selection.effort, resume: resume,
+            systemPromptFile: config.systemPromptFile, configOverlays: config.configOverlays
+        )
+        let tools = hostTools
         let adjustments = launchAdjustments()
         let process = LineProcess(LineProcess.Configuration(
             executable: executable,
@@ -372,6 +399,8 @@ public actor OmpSession: ProviderSession {
             _ = try await client.request("set_event_filter", ["events": .null, "messageUpdates": "delta"])
             // Builds without subagent forwarding answer with a failure; they show no subagents.
             _ = try? await client.request("set_subagent_subscription", ["level": "events"])
+            // Builds without host tools answer with a failure; their agents can't reach the team.
+            if !tools.isEmpty { _ = try? await client.request("set_host_tools", OmpProtocol.hostToolFields(tools)) }
             return try await client.request("get_state")
         }
         sessionFile = state["sessionFile"]?.nonEmptyString ?? sessionFile
@@ -435,6 +464,13 @@ public actor OmpSession: ProviderSession {
         activePromptID = nil
         compactionID = nil
         pending.removeAll()
+        cancelHostCalls()
+    }
+
+    /// The process that asked is gone: its host tool calls can't be answered any more.
+    private func cancelHostCalls() {
+        for id in pendingHostCalls { continuation.yield(.hostToolCancelled(id: id)) }
+        pendingHostCalls.removeAll()
     }
 
     /// Restarts on the same session file with a new approval mode.
@@ -545,6 +581,15 @@ public actor OmpSession: ProviderSession {
             guard let id = frame["recordId"]?.nonEmptyString, let delta = frame["delta"]?.stringValue, !delta.isEmpty else { return }
             if runningSideQuestion?.id == id { runningSideQuestion?.latest.answer += delta }
             continuation.yield(.sideQuestionDelta(id: id, delta: delta))
+            return
+        case "host_tool_call":
+            guard let call = OmpProtocol.hostToolCall(frame) else { return }
+            pendingHostCalls.insert(call.id)
+            continuation.yield(.hostToolCall(call))
+            return
+        case "host_tool_cancel":
+            guard let id = frame["targetId"]?.stringValue, pendingHostCalls.remove(id) != nil else { return }
+            continuation.yield(.hostToolCancelled(id: id))
             return
         default:
             break
@@ -673,6 +718,7 @@ public actor OmpSession: ProviderSession {
         activePromptID = nil
         compactionID = nil
         for event in subagents.abortAll() { continuation.yield(event) }
+        cancelHostCalls()
         interruptSideQuestion()
         continuation.yield(.sessionEnded(error: error))
         continuation.finish()

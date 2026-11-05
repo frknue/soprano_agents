@@ -24,6 +24,8 @@ final class ScriptedSession: ProviderSession, @unchecked Sendable {
     var startTurnError: (any Error)?
     /// Awaited by `start` (a slow process start).
     var startGate: (@Sendable () async -> Void)?
+    /// Awaited by `rollback` after recording it (a slow rewind).
+    var rollbackGate: (@Sendable () async -> Void)?
 
     init(kind: ProviderKind) {
         self.kind = kind
@@ -54,9 +56,14 @@ final class ScriptedSession: ProviderSession, @unchecked Sendable {
         if let startTurnError { throw startTurnError }
         return lock.withLock {
             _turns.append(input)
+            _toolSetsAtTurnStart.append(_hostToolSets.count)
             return "provider-turn-\(_turns.count)"
         }
     }
+
+    private var _toolSetsAtTurnStart: [Int] = []
+    /// How many `setHostTools` calls had arrived when each turn started.
+    var toolSetsAtTurnStart: [Int] { lock.withLock { _toolSetsAtTurnStart } }
 
     func steer(_ input: TurnInput) async throws { lock.withLock { _steers.append(input) } }
     func interrupt() async { lock.withLock { _interrupts += 1 } }
@@ -75,6 +82,7 @@ final class ScriptedSession: ProviderSession, @unchecked Sendable {
 
     func rollback(beforeTurn ordinal: Int, providerTurnID: String?) async throws {
         lock.withLock { _rollbacks.append((ordinal, providerTurnID)) }
+        await rollbackGate?()
     }
 
     func steerSubagent(_ id: String, text: String) async throws {
@@ -113,6 +121,19 @@ final class ScriptedSession: ProviderSession, @unchecked Sendable {
     func sideQuestions() async throws -> [SideQuestion] {
         lock.withLock { _historyReads += 1 }
         return sideQuestionHistory
+    }
+
+    private var _hostToolSets: [[HostToolDefinition]] = []
+    private var _hostToolResults: [(id: String, result: HostToolResult)] = []
+    var hostToolSets: [[HostToolDefinition]] { lock.withLock { _hostToolSets } }
+    var hostToolResults: [(id: String, result: HostToolResult)] { lock.withLock { _hostToolResults } }
+
+    func setHostTools(_ tools: [HostToolDefinition]) async {
+        lock.withLock { _hostToolSets.append(tools) }
+    }
+
+    func finishHostTool(_ id: String, result: HostToolResult) async {
+        lock.withLock { _hostToolResults.append((id, result)) }
     }
 
     func close() async {
@@ -291,13 +312,15 @@ enum EngineHarness {
         driver: ScriptedDriver = ScriptedDriver(),
         git: RecordingGit = RecordingGit(),
         store: any ThreadStore = InMemoryThreadStore(),
-        settings: EngineSettings = EngineSettings(generateTitles: false)
+        settings: EngineSettings = EngineSettings(generateTitles: false),
+        ompAgentsDirectory: URL? = nil
     ) -> AgentEngine {
         let environment = EngineEnvironment(
             drivers: [driver.kind: driver],
             git: git,
             store: store,
-            dataDirectory: temporaryDirectory()
+            dataDirectory: temporaryDirectory(),
+            ompAgentsDirectory: ompAgentsDirectory
         )
         let engine = AgentEngine(environment: environment, settings: settings)
         engine.runtime.titleRetryDelay = .zero

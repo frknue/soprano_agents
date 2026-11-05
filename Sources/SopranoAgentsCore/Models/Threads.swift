@@ -82,13 +82,23 @@ public struct UserMessage: Codable, Sendable, Hashable, Identifiable {
     public var createdAt: Date
     /// Sent while a turn was running and delivered into it ("↪ Steer").
     public var isSteer: Bool
+    /// Another teammate or thread sent it (`team_message`); nil = the user. Older files lack it.
+    public var sender: MessageSender?
 
-    public init(id: String = UUID().uuidString, text: String, attachments: [Attachment] = [], createdAt: Date = Date(), isSteer: Bool = false) {
+    public init(
+        id: String = UUID().uuidString,
+        text: String,
+        attachments: [Attachment] = [],
+        createdAt: Date = Date(),
+        isSteer: Bool = false,
+        sender: MessageSender? = nil
+    ) {
         self.id = id
         self.text = text
         self.attachments = attachments
         self.createdAt = createdAt
         self.isSteer = isSteer
+        self.sender = sender
     }
 }
 
@@ -141,6 +151,9 @@ public struct AgentThread: Codable, Sendable, Hashable, Identifiable {
     public var contextUsage: TokenUsage?
     /// Helper agents the thread's agent started, in start order. Older files lack it.
     public var subagents: [Subagent]
+    /// The thread is a teammate's home: its long-lived conversation (`Teammate`). Such threads
+    /// live in the sidebar's Team section, not the inbox. Older files lack it.
+    public var teammate: Teammate?
 
     public init(
         id: String = UUID().uuidString,
@@ -161,7 +174,8 @@ public struct AgentThread: Codable, Sendable, Hashable, Identifiable {
         queue: [QueuedMessage] = [],
         isGeneratingTitle: Bool = false,
         contextUsage: TokenUsage? = nil,
-        subagents: [Subagent] = []
+        subagents: [Subagent] = [],
+        teammate: Teammate? = nil
     ) {
         self.id = id
         self.projectID = projectID
@@ -182,6 +196,7 @@ public struct AgentThread: Codable, Sendable, Hashable, Identifiable {
         self.isGeneratingTitle = isGeneratingTitle
         self.contextUsage = contextUsage
         self.subagents = subagents
+        self.teammate = teammate
     }
 
     /// The last turn while it has not ended, working or yielded (`Turn.isYielded`): provider
@@ -234,6 +249,7 @@ extension AgentThread {
         isGeneratingTitle = try container.decode(Bool.self, forKey: .isGeneratingTitle)
         contextUsage = try container.decodeIfPresent(TokenUsage.self, forKey: .contextUsage)
         subagents = try container.decodeIfPresent([Subagent].self, forKey: .subagents) ?? []
+        teammate = try container.decodeIfPresent(Teammate.self, forKey: .teammate)
     }
 }
 

@@ -6,6 +6,8 @@ import SopranoAgentsCore
 /// (title click opens the thread action menu, double-click renames inline, right-click anywhere
 /// opens the menu), the workspace location (`repo/sub/folder` and branch; click toggles the thread
 /// details) plus the fixed title-bar toggles (thread details, terminal, right panel).
+/// A teammate's thread reads avatar, name and its role (muted) instead of project / title; its
+/// menu is the teammate menu and double-click opens Edit Teammate.
 /// With the sidebar hidden, the breadcrumb clears the traffic lights and a sidebar toggle appears.
 @MainActor
 final class ChatHeaderView: PaletteView {
@@ -19,6 +21,9 @@ final class ChatHeaderView: PaletteView {
     private let subagentSeparator = NSTextField.label("/", size: Typography.bodySize, weight: .medium)
     /// "Reader · sonic" while a subagent is selected.
     private let subagentLabel = NSTextField.label("", size: Typography.bodySize, weight: .medium)
+    /// A teammate's avatar before its name, and its role after it.
+    private let teammateAvatar = TeammateAvatarView()
+    private let roleLabel = NSTextField.label("", size: Typography.bodySize)
     private let locationButton = HeaderLocationButton()
     /// What `locationButton` shows was loaded for; a change reloads it.
     private var locationSignature: String?
@@ -36,7 +41,8 @@ final class ChatHeaderView: PaletteView {
         self.state = state
         super.init(frame: NSRect(x: 0, y: 0, width: 600, height: Metrics.topbarHeight))
         subagentLabel.lineBreakMode = .byTruncatingTail
-        for view in [sidebarButton, projectButton, separator, titleButton, subagentSeparator, subagentLabel, locationButton, detailsButton, terminalButton, rightPanelButton] as [NSView] {
+        roleLabel.lineBreakMode = .byTruncatingTail
+        for view in [sidebarButton, projectButton, separator, teammateAvatar, titleButton, roleLabel, subagentSeparator, subagentLabel, locationButton, detailsButton, terminalButton, rightPanelButton] as [NSView] {
             addSubview(view)
         }
         sidebarButton.onClick = { [weak self] in self?.perform("view.toggleSidebar") }
@@ -96,13 +102,19 @@ final class ChatHeaderView: PaletteView {
 
     private func refresh() {
         let thread = thread
+        let teammate = thread?.teammate
         let projectID = thread?.projectID ?? state.draftProjectID
-        let project = engine.project(projectID)
+        let project = teammate == nil ? engine.project(projectID) : nil
         projectButton.configure(project: project)
         projectButton.isHidden = project == nil
-        titleButton.title = thread?.title ?? ""
+        titleButton.title = teammate?.name ?? thread?.title ?? ""
         titleButton.isHidden = thread == nil
         separator.isHidden = project == nil || thread == nil
+        teammateAvatar.isHidden = teammate == nil
+        if let teammate { teammateAvatar.configure(name: teammate.name, handle: teammate.handle) }
+        roleLabel.stringValue = teammate.map { $0.role.isEmpty ? "@\($0.handle)" : $0.role } ?? ""
+        roleLabel.toolTip = teammate.map { "@\($0.handle)" }
+        roleLabel.isHidden = teammate == nil
         let subagent = subagent
         subagentLabel.stringValue = subagent.map { "\($0.name) · \($0.agent)" } ?? ""
         subagentLabel.toolTip = subagent?.assignment
@@ -192,6 +204,7 @@ final class ChatHeaderView: PaletteView {
             let gap: CGFloat = 16
             let prefix = (projectButton.isHidden ? 0 : projectButton.fittingWidth)
                 + (separator.isHidden ? 0 : ceil(separator.intrinsicContentSize.width) + 28)
+                + (teammateAvatar.isHidden ? 0 : 18 + 8)
             let title: CGFloat = if renameField != nil {
                 max(160, titleButton.frame.width + 40)
             } else {
@@ -218,12 +231,22 @@ final class ChatHeaderView: PaletteView {
             separator.frame = NSRect(x: left + 12, y: (height - size.height) / 2, width: ceil(size.width) + 4, height: size.height)
             left = separator.frame.maxX + 12
         }
+        if !teammateAvatar.isHidden {
+            teammateAvatar.frame = NSRect(x: left, y: (height - 18) / 2, width: 18, height: 18)
+            left = teammateAvatar.frame.maxX + 8
+        }
         if !titleButton.isHidden {
             // A selected subagent's label keeps its room; the thread title truncates first.
             let room = subagentLabel.isHidden ? breadcrumbLimit - left : max(80, breadcrumbLimit - left - subagentWidth)
             let width = min(titleButton.fittingWidth, max(0, room))
             titleButton.frame = NSRect(x: left, y: (height - 28) / 2, width: width, height: 28)
             left = titleButton.frame.maxX
+        }
+        if !roleLabel.isHidden {
+            // The role is the teammate's subtitle: it truncates before the name does.
+            let size = roleLabel.intrinsicContentSize
+            let x = left + 6
+            roleLabel.frame = NSRect(x: x, y: (height - size.height) / 2, width: max(0, min(ceil(size.width) + 4, breadcrumbLimit - x)), height: size.height)
         }
         if !subagentLabel.isHidden {
             let size = subagentSeparator.intrinsicContentSize
@@ -249,6 +272,7 @@ final class ChatHeaderView: PaletteView {
         separator.textColor = palette.mutedForeground
         subagentSeparator.textColor = palette.mutedForeground
         subagentLabel.textColor = palette.foreground
+        roleLabel.textColor = palette.mutedForeground
     }
 
     // MARK: Menu and rename
@@ -280,9 +304,14 @@ final class ChatHeaderView: PaletteView {
         DispatchQueue.main.asyncAfter(deadline: .now() + NSEvent.doubleClickInterval, execute: work)
     }
 
-    /// Inline rename of the title: Enter or blur commits, Escape cancels.
+    /// Inline rename of the title: Enter or blur commits, Escape cancels. A teammate's title opens
+    /// Edit Teammate instead (its name is part of the teammate).
     func beginRename() {
         guard let thread, renameField == nil else { return }
+        if thread.teammate != nil {
+            TeamActions.edit(thread.id, engine: engine, state: state, window: window)
+            return
+        }
         let field = InlineRenameField(text: thread.title)
         let threadID = thread.id
         field.onCommit = { [weak self] text in

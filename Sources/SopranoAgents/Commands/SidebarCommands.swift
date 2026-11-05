@@ -88,9 +88,9 @@ enum SidebarCommands {
                 scopes: notTerminal,
                 defaultKeys: ["cmd+shift+s"],
                 icon: Icon.circleCheck,
-                isEnabled: { $0.thread != nil }
+                isEnabled: { plainThread($0) != nil }
             ) { context in
-                guard let engine = context.engine, let thread = context.thread else { return }
+                guard let engine = context.engine, let thread = plainThread(context) else { return }
                 ThreadActions.toggleSettled(thread.id, engine: engine)
             },
             AppCommand(
@@ -101,9 +101,9 @@ enum SidebarCommands {
                 scopes: notTerminal,
                 defaultKeys: ["cmd+shift+p"],
                 icon: Icon.pin,
-                isEnabled: { $0.thread != nil }
+                isEnabled: { plainThread($0) != nil }
             ) { context in
-                guard let engine = context.engine, let thread = context.thread else { return }
+                guard let engine = context.engine, let thread = plainThread(context) else { return }
                 ThreadActions.togglePinned(thread.id, engine: engine)
             },
             // F2 in the sidebar list renames too (the list handles it: KeyChord has no function keys).
@@ -114,9 +114,9 @@ enum SidebarCommands {
                 category: .thread,
                 scopes: [.sidebar],
                 icon: SidebarSymbol.pencil,
-                isEnabled: { $0.thread != nil }
+                isEnabled: { plainThread($0) != nil }
             ) { context in
-                guard let thread = context.thread, let workspace = context.workspace else { return }
+                guard let thread = plainThread(context), let workspace = context.workspace else { return }
                 if workspace.state.isSidebarVisible {
                     workspace.sidebar.beginRename(thread.id)
                 } else {
@@ -129,9 +129,9 @@ enum SidebarCommands {
                 description: "Hide the thread from the list",
                 category: .thread,
                 icon: SidebarSymbol.archive,
-                isEnabled: { $0.thread.map { !$0.isRunning } ?? false }
+                isEnabled: { plainThread($0).map { !$0.isRunning } ?? false }
             ) { context in
-                guard let engine = context.engine, let state = context.state, let thread = context.thread else { return }
+                guard let engine = context.engine, let state = context.state, let thread = plainThread(context) else { return }
                 ThreadActions.archive(thread.id, engine: engine, state: state)
             },
             AppCommand(
@@ -140,9 +140,9 @@ enum SidebarCommands {
                 description: "Remove the thread permanently",
                 category: .thread,
                 icon: SidebarSymbol.trash,
-                isEnabled: { $0.thread != nil }
+                isEnabled: { plainThread($0) != nil }
             ) { context in
-                guard let engine = context.engine, let state = context.state, let thread = context.thread else { return }
+                guard let engine = context.engine, let state = context.state, let thread = plainThread(context) else { return }
                 ThreadActions.delete(thread.id, engine: engine, state: state, window: context.window)
             },
             AppCommand(
@@ -202,5 +202,12 @@ enum SidebarCommands {
 
     private static func threadOrder(_ context: CommandContext) -> [String] {
         context.workspace?.sidebar.threadOrder ?? []
+    }
+
+    /// The selected thread unless it is a teammate's: pin, settle, rename, archive and delete
+    /// are thread actions (teammates have Edit / Delete Teammate, `TeamCommands`).
+    private static func plainThread(_ context: CommandContext) -> AgentThread? {
+        guard let thread = context.thread, thread.teammate == nil else { return nil }
+        return thread
     }
 }

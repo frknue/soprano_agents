@@ -12,6 +12,9 @@ Deliberately not built yet, so nobody mistakes their absence for a bug. Geplante
 - Right-panel surfaces other than Diff, Files, file tabs and Terminal: in-app browser preview
   (im Backlog, nach der Link-Karte), pull request pages, device; editing files in the file tab.
 - Subagent lineage tree.
+- Team: OpenCode threads can't message teammates (the team tools are omp host tools; teammates
+  run on omp); teammates act only when messaged (no schedules or standing check-ins); terminal
+  omp gets a fresh copy of an exported teammate, not the one with its conversation and memory.
 - Snooze, drag-and-drop inbox reordering, multi-select sidebar actions.
 - Custom themes, theme editor, VS Code theme import (the `theme` setting picks a Soprano theme).
 - Mobile and web clients.
