@@ -10,23 +10,28 @@ struct SidebarTeamActions {
     var menu: (String) -> NSMenu?
 }
 
-/// "Team  2  ＋": the Team section's header (shelf style, not collapsible); ＋ opens New Teammate.
-final class SidebarTeamHeaderCell: PaletteView {
+/// "Team  2 ⌄ ＋": the Team section's header, a shelf (click collapses it; the chevron points
+/// right while closed); ＋ opens New Teammate.
+final class SidebarTeamHeaderCell: InteractiveView {
     private let titleLabel = NSTextField.label("Team", size: Typography.smallSize, weight: .medium)
     private let countLabel = NSTextField.label("", size: Typography.smallSize)
+    private let chevron = NSImageView()
     let addButton = RowActionButton(symbol: SidebarSymbol.plus, symbolSize: 11, accessibility: "New teammate")
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         countLabel.font = Typography.tabular(Typography.smallSize)
-        for view in [titleLabel, countLabel, addButton] as [NSView] { addSubview(view) }
+        for view in [titleLabel, countLabel, chevron, addButton] as [NSView] { addSubview(view) }
+        setAccessibilityRole(.button)
         applyPalette(palette)
     }
 
-    func configure(count: Int) {
+    func configure(count: Int, expanded: Bool) {
         countLabel.stringValue = count > 0 ? "\(count)" : ""
         countLabel.isHidden = count == 0
+        chevron.image = NSImage.symbol(expanded ? Icon.chevronDown : Icon.chevronRight, size: 9, weight: .semibold)
         setAccessibilityLabel("Team \(count)")
+        setAccessibilityExpanded(expanded)
         needsLayout = true
     }
 
@@ -39,13 +44,16 @@ final class SidebarTeamHeaderCell: PaletteView {
         titleLabel.frame = NSRect(x: left - 2, y: (height - titleSize.height) / 2, width: ceil(titleSize.width) + 4, height: titleSize.height)
         let addWidth = addButton.fittingWidth
         addButton.frame = NSRect(x: right - addWidth, y: (height - 20) / 2, width: addWidth, height: 20)
+        chevron.frame = NSRect(x: addButton.frame.minX - 6 - 12, y: (height - 12) / 2, width: 12, height: 12)
         let countSize = countLabel.intrinsicContentSize
-        countLabel.frame = NSRect(x: addButton.frame.minX - 4 - ceil(countSize.width) - 4, y: (height - countSize.height) / 2, width: ceil(countSize.width) + 4, height: countSize.height)
+        countLabel.frame = NSRect(x: chevron.frame.minX - 8 - ceil(countSize.width) - 4, y: (height - countSize.height) / 2, width: ceil(countSize.width) + 4, height: countSize.height)
     }
 
     override func applyPalette(_ palette: Palette) {
-        titleLabel.textColor = palette.sidebarMutedForeground
-        countLabel.textColor = palette.sidebarMutedForeground
+        let color = isHovered ? palette.sidebarForeground.alphaScaled(by: 0.8) : palette.sidebarMutedForeground
+        titleLabel.textColor = color
+        countLabel.textColor = color
+        chevron.contentTintColor = color
     }
 }
 

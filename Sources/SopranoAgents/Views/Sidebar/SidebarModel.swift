@@ -74,8 +74,8 @@ struct SidebarTeammateRow: Equatable {
 
 /// A row of the sidebar list, top to bottom.
 enum SidebarItem: Equatable {
-    /// "Team N  +" header of the Team section (above the inbox).
-    case teamHeader(count: Int)
+    /// "Team N ⌄ +" header of the Team section (above the inbox); click collapses the section.
+    case teamHeader(count: Int, expanded: Bool)
     /// A teammate (two-line row with an avatar).
     case teammate(SidebarTeammateRow)
     /// The empty Team section's hint.
@@ -181,6 +181,8 @@ struct SidebarListOptions: Equatable {
     var projectFilter: Set<String> = []
     var searchText = ""
     var expandedShelves: Set<InboxSection> = SidebarListModel.defaultExpandedShelves
+    /// The Team section is open (its header toggles it).
+    var teamExpanded = true
     /// Settled rows shown while the Settled shelf is open.
     var settledLimit = SidebarListModel.settledInitialCount
     /// Subagent disclosures the user opened (true) or closed (false) per thread; others are open
@@ -205,13 +207,18 @@ enum SidebarListModel {
     }
 
     /// "Team N +" and a row per teammate thread (in `team` order), or the hint when there are none.
-    /// Teammates ignore the project filter: they serve every project.
+    /// Collapsed, only the open teammate stays listed. Teammates ignore the project filter: they
+    /// serve every project.
     static func teamItems(team: [AgentThread], options: SidebarListOptions) -> [SidebarItem] {
         let teammates = team.compactMap { thread -> SidebarItem? in
             guard let teammate = thread.teammate else { return nil }
             return .teammate(teammateRow(for: thread, teammate: teammate, options: options))
         }
-        return [.teamHeader(count: teammates.count)] + (teammates.isEmpty ? [.teamHint] : teammates)
+        let header = SidebarItem.teamHeader(count: teammates.count, expanded: options.teamExpanded)
+        guard options.teamExpanded else {
+            return [header] + teammates.filter { $0.threadID == options.selectedThreadID }
+        }
+        return [header] + (teammates.isEmpty ? [.teamHint] : teammates)
     }
 
     static func teammateRow(for thread: AgentThread, teammate: Teammate, options: SidebarListOptions) -> SidebarTeammateRow {

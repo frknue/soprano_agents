@@ -182,6 +182,16 @@ enum SidebarCommands {
                 workspace.view.layoutSubtreeIfNeeded()
                 workspace.sidebar.toggleProjectFilter()
             },
+            AppCommand(
+                id: "sidebar.toggleTeam",
+                title: "Collapse or Expand Team",
+                description: "Show or hide the teammates in the list",
+                category: .navigation,
+                icon: Icon.chevronDown,
+                inPalette: false
+            ) { context in
+                context.workspace?.sidebar.toggleTeam()
+            },
         ]
         for position in 1...9 {
             commands.append(AppCommand(

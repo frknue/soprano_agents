@@ -715,6 +715,7 @@ binding beats a global one. Shortcuts that would need ⌥ use ⌃⌘ instead.
 | `thread.copyReference` | Copy Thread Reference | not terminal | `cmd+shift+c` | Sidebar |
 | `sidebar.search` | Search Threads | global | — | Sidebar |
 | `sidebar.filterProjects` | Filter Threads by Project | global | — | Sidebar |
+| `sidebar.toggleTeam` | Collapse or Expand Team (the Team header's click; not in the palette) | — | — | Sidebar |
 | `chat.find` | Find in Thread | sidebar, timeline, composer | `cmd+f` | Timeline |
 | `timeline.jumpToLatest` | Jump to Latest | timeline | `cmd+down` | Timeline |
 | `timeline.expandAll` / `timeline.collapseAll` | Expand / Collapse All Work | — | — | Timeline |
@@ -794,10 +795,12 @@ router as global). A right-panel terminal tab is focus region `terminal`, like t
   failed, stopped `stop.circle`), name, "agent · latest intent" (else description or
   assignment), live run time. A selected subagent stays listed under a closed disclosure; its
   row, not the thread's, is highlighted, and its thread stays unread until opened itself.
-- Team (sidebar, above Pinned; hidden while searching, ignores the project filter): "Team N"
-  header with a "+" (New Teammate…), then one 48 pt row per `engine.team` thread in creation
-  order — a 24 pt avatar circle with the name's initial (hue from the handle among the palette's
-  `projectIconColors`), name over role, the usual status pill or relative time, "⋯" on hover.
+- Team (sidebar, above Pinned; hidden while searching, ignores the project filter): "Team N ⌄"
+  header with a "+" (New Teammate…); clicking the header collapses the section like a shelf
+  (open by default, not persisted; collapsed, only the open teammate stays listed), then one
+  48 pt row per `engine.team` thread in creation order — a 24 pt avatar circle with the name's
+  initial (hue from the handle among the palette's `projectIconColors`), name over role, the
+  usual status pill or relative time, "⋯" on hover.
   Empty, it shows "Create a teammate to chat with and delegate to". Click opens the thread like
   any other, double-click / F2 edits, right-click is the teammate menu (Edit Teammate…, Mark
   unread, Copy ▸ Handle / Path / Thread ID, Delete Teammate…). Teammates come first in the

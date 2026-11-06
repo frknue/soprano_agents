@@ -32,6 +32,7 @@ final class SidebarViewController: NSViewController, FocusRegionController, NSTa
     private(set) var items: [SidebarItem] = []
     private var heightWithoutSpacer: CGFloat = 0
     private var expandedShelves = SidebarListModel.defaultExpandedShelves
+    private var teamExpanded = true
     private var settledLimit = SidebarListModel.settledInitialCount
     /// Subagent disclosures the user toggled, per thread (`SidebarListOptions.subagentDisclosure`).
     private var subagentDisclosure: [String: Bool] = [:]
@@ -245,6 +246,7 @@ final class SidebarViewController: NSViewController, FocusRegionController, NSTa
             projectFilter: state.projectFilter,
             searchText: state.searchText,
             expandedShelves: expandedShelves,
+            teamExpanded: teamExpanded,
             settledLimit: settledLimit,
             subagentDisclosure: subagentDisclosure
         )
@@ -376,9 +378,10 @@ final class SidebarViewController: NSViewController, FocusRegionController, NSTa
         let now = engine.environment.now()
         let order = threadOrder
         switch items[row] {
-        case let .teamHeader(count):
+        case let .teamHeader(count, expanded):
             let cell = reuse("teamHeader") { SidebarTeamHeaderCell(frame: .zero) }
-            cell.configure(count: count)
+            cell.configure(count: count, expanded: expanded)
+            cell.onClick = { [weak self] in self?.perform("sidebar.toggleTeam") }
             cell.addButton.onClick = { [weak self] in self?.perform("team.new") }
             return cell
         case let .teammate(model):
@@ -563,6 +566,12 @@ final class SidebarViewController: NSViewController, FocusRegionController, NSTa
         } else {
             expandedShelves.insert(section)
         }
+        reload()
+    }
+
+    /// `sidebar.toggleTeam`: collapse or expand the Team section.
+    func toggleTeam() {
+        teamExpanded.toggle()
         reload()
     }
 

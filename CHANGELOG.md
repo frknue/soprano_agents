@@ -39,7 +39,8 @@ All notable changes to Soprano Agents are documented here. The format follows
   themselves: with the `team_create` tool a teammate adds a new one (name, role, instructions,
   home project) when you ask it to or when work needs an owner nobody covers, and can message it
   right away; `team_update` changes a teammate's name, handle, role, instructions or home, and
-  `team_delete` removes one when you ask (never itself).
+  `team_delete` removes one when you ask (never itself). Click the Team header to collapse the
+  section like the inbox sections; the open teammate stays listed.
 - Thread inbox sidebar: search (titles, branches, messages), project filter, Add project, New
   thread (⌘N, ⇧⌘N, ⌃⌘N), collapsible Pinned, Working, Blocked, Failed, Done and Idle sections
   at the top with live status pills (Working, Approval, Input, Failed, Done; reading a thread

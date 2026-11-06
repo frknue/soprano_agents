@@ -57,7 +57,7 @@ struct SidebarModelTests {
     private static func describe(_ items: [SidebarItem]) -> [String] {
         items.map { item in
             switch item {
-            case let .teamHeader(count): "Team \(count)"
+            case let .teamHeader(count, expanded): "Team \(count)\(expanded ? " open" : "")"
             case let .teammate(row): "teammate \(row.threadID)\(row.isSelected ? " selected" : "")"
             case .teamHint: "team hint"
             case let .card(row): "card \(row.threadID)"
@@ -310,7 +310,7 @@ struct SidebarModelTests {
         let frontend = Self.teammate("fe", name: "Frontend", handle: "frontend", turns: false)
         let threads = [cto, frontend, Self.thread("a")]
         let items = SidebarListModel.list(threads: threads, team: [cto, frontend], projects: [Self.app], options: SidebarListOptions(selectedThreadID: "fe"))
-        #expect(Self.describe(items) == ["Team 2", "teammate cto", "teammate fe selected", "Done 1 open", "card a", "spacer", "Settled 0"])
+        #expect(Self.describe(items) == ["Team 2 open", "teammate cto", "teammate fe selected", "Done 1 open", "card a", "spacer", "Settled 0"])
         // ↑/↓ and ⌃1…⌃9 reach teammates first.
         #expect(SidebarListModel.threadOrder(items) == ["cto", "fe", "a"])
         // The project filter scopes threads, not the team.
@@ -318,9 +318,20 @@ struct SidebarModelTests {
         #expect(SidebarListModel.threadOrder(filtered) == ["cto", "fe"])
     }
 
+    @Test func aCollapsedTeamKeepsOnlyTheOpenTeammate() {
+        let cto = Self.teammate("cto", name: "CTO", handle: "cto")
+        let frontend = Self.teammate("fe", name: "Frontend", handle: "frontend")
+        let selected = SidebarListModel.list(threads: [cto, frontend], team: [cto, frontend], projects: [Self.app], options: SidebarListOptions(selectedThreadID: "fe", teamExpanded: false))
+        #expect(Array(Self.describe(selected).prefix(2)) == ["Team 2", "teammate fe selected"])
+        let other = SidebarListModel.list(threads: [cto, frontend, Self.thread("a")], team: [cto, frontend], projects: [Self.app], options: SidebarListOptions(selectedThreadID: "a", teamExpanded: false))
+        #expect(SidebarListModel.threadOrder(other) == ["a"])
+        let empty = SidebarListModel.list(threads: [], team: [], projects: [Self.app], options: SidebarListOptions(teamExpanded: false))
+        #expect(!Self.describe(empty).contains("team hint"))
+    }
+
     @Test func anEmptyTeamShowsItsHintAndSearchHidesTheTeam() {
         let items = SidebarListModel.list(threads: [Self.thread("a")], team: [], projects: [Self.app], options: SidebarListOptions())
-        #expect(Array(Self.describe(items).prefix(2)) == ["Team 0", "team hint"])
+        #expect(Array(Self.describe(items).prefix(2)) == ["Team 0 open", "team hint"])
         let cto = Self.teammate("cto", name: "CTO", handle: "cto")
         let searching = SidebarListModel.list(threads: [cto, Self.thread("a", title: "CTO notes")], team: [cto], projects: [Self.app], options: SidebarListOptions(searchText: "cto"))
         #expect(Self.describe(searching) == ["card a"])
