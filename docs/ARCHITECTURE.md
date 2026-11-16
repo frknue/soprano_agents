@@ -309,7 +309,19 @@ arrives as `extension_ui_request`: a `select` titled `Allow tool:
 answered as `extension_ui_response {id, value}`); other `select`, `confirm`, `input`, `editor` and
 `ask` become user-input requests (answers `value`, `confirmed`, `answers[{id, selectedOptions,
 customInput?}]`, dismissed → `cancelled:true`); `cancel {targetId}` withdraws one; `notify` is a
-notice; dialogs arriving after the turn ended are cancelled. Events (`OmpEventMapper`):
+notice; dialogs arriving after the turn ended are cancelled. The `ask` tool walks an HTML form
+field by field (`OmpUIRequest`): a radio group is a `select` with `selectionMarker:"radio"`, a
+checkbox group one with `selectionMarker:"checkbox"`, `checkedIndices` and `markableCount` that
+omp re-sends after every toggle until its trailing "Done selecting" action; both end their
+marked rows with "Other (type your own)", whose pick is followed by an `input`; text fields are
+`editor` with `prefill`. Each field shows as one question (choices only, the checked radio or
+boxes preselected as `initialSelection`, the Other row as free text, `prefill` as
+`initialText`); `OmpSession` sends the answer's first reply and answers the dialogs that follow
+it from the rest (`OmpUIRequest.replies(to:)`: toggles of what changed, Other then the text,
+the done action) without showing them, but only that field's own dialogs
+(`OmpUIRequest.isFollowUp`: its `select` again with the same marker, options and question, or an
+`input`/`editor` titled with its question; never an approval). Other dialogs in between are
+shown; a `cancel` or the turn's end drops the rest. Events (`OmpEventMapper`):
 `message_update` text/thinking deltas (item ids `<messageId>:<contentIndex>`, prefixed after a
 relaunch), `tool_execution_start|update|end` → bash → command, write/edit/apply_patch/ast_edit →
 fileChange (edit diffs converted from omp's line-numbered format; without one, a running call and a

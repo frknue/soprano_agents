@@ -348,6 +348,29 @@ struct OmpEventMapperTests {
         #expect(questions[3] == UserInputQuestion(id: "q", header: "Tools", question: "Which?", options: [UserInputOption(label: "git", description: "VCS")], allowsMultiple: true, allowsOther: true))
     }
 
+    @Test func formFieldsBecomeOneQuestionEachWithTheirCurrentState() {
+        let events = Self.map([
+            Self.ui("select", ["title": "Context.\n\nApproach", "options": ["Option X", "Option Y", "Other (type your own)"],
+                               "initialIndex": 1, "selectionMarker": "radio", "optionDetails": [["description": "the x"], [:], [:]]]),
+            Self.ui("select", ["title": "(2 selected) Scope", "options": ["One", "Two", "Three", "Other (type your own)", "\u{f00c} Done selecting"],
+                               "initialIndex": 0, "selectionMarker": "checkbox", "checkedIndices": [0, 2], "markableCount": 4]),
+            Self.ui("editor", ["title": "Name", "prefill": "def", "promptStyle": true]),
+        ])
+        let questions = events.compactMap { event -> UserInputQuestion? in
+            if case let .userInputRequested(request) = event { return request.questions.first }
+            return nil
+        }
+
+        #expect(questions.count == 3)
+        #expect(questions[0].options == [UserInputOption(label: "Option X", description: "the x"), UserInputOption(label: "Option Y")])
+        #expect(questions[0].question == "Context.\n\nApproach" && !questions[0].allowsMultiple && questions[0].allowsOther)
+        #expect(questions[0].initialSelection == ["Option Y"])
+        #expect(questions[1].options.map(\.label) == ["One", "Two", "Three"])
+        #expect(questions[1].question == "Scope" && questions[1].allowsMultiple && questions[1].allowsOther)
+        #expect(questions[1].initialSelection == ["One", "Three"])
+        #expect(questions[2].initialText == "def")
+    }
+
     @Test func cancelWithdrawsARequestAndPresentationRequestsAreIgnored() {
         let events = Self.map([
             Self.ui("cancel", ["targetId": "ui-0"]),

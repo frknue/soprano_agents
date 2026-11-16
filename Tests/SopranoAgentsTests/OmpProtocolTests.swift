@@ -170,8 +170,8 @@ struct OmpProtocolTests {
         let request = OmpUIRequest(["type": "extension_ui_request", "id": "ask-1", "method": "ask", "questions": .array(Self.questions)])!
         let select = OmpUIRequest(["type": "extension_ui_request", "id": "sel-1", "method": "select", "title": "Pick", "options": ["a", "b"]])!
 
-        #expect(OmpSession.response(to: request, answers: [:]) == ["type": "extension_ui_response", "id": "ask-1", "cancelled": true])
-        #expect(OmpSession.response(to: select, answers: [:]) == ["type": "extension_ui_response", "id": "sel-1", "cancelled": true])
+        #expect(OmpSession.response(to: request, answers: [:]).frame == ["type": "extension_ui_response", "id": "ask-1", "cancelled": true])
+        #expect(OmpSession.response(to: select, answers: [:]).frame == ["type": "extension_ui_response", "id": "sel-1", "cancelled": true])
     }
 
     @Test func dialogAnswersUseThePayloadOfTheirMethod() {
@@ -180,11 +180,46 @@ struct OmpProtocolTests {
         }
         let id = OmpUIRequest.singleQuestionID
 
-        #expect(OmpSession.response(to: request("select"), answers: [id: ["b"]]) == ["type": "extension_ui_response", "id": "r", "value": "b"])
-        #expect(OmpSession.response(to: request("confirm"), answers: [id: ["Yes"]]) == ["type": "extension_ui_response", "id": "r", "confirmed": true])
-        #expect(OmpSession.response(to: request("confirm"), answers: [id: ["No"]]) == ["type": "extension_ui_response", "id": "r", "confirmed": false])
-        #expect(OmpSession.response(to: request("input"), answers: [id: ["hello"]]) == ["type": "extension_ui_response", "id": "r", "value": "hello"])
-        #expect(OmpSession.response(to: request("editor"), answers: [id: ["a", "b"]]) == ["type": "extension_ui_response", "id": "r", "value": "a\nb"])
+        #expect(OmpSession.response(to: request("select"), answers: [id: ["b"]]).frame == ["type": "extension_ui_response", "id": "r", "value": "b"])
+        #expect(OmpSession.response(to: request("confirm"), answers: [id: ["Yes"]]).frame == ["type": "extension_ui_response", "id": "r", "confirmed": true])
+        #expect(OmpSession.response(to: request("confirm"), answers: [id: ["No"]]).frame == ["type": "extension_ui_response", "id": "r", "confirmed": false])
+        #expect(OmpSession.response(to: request("input"), answers: [id: ["hello"]]).frame == ["type": "extension_ui_response", "id": "r", "value": "hello"])
+        #expect(OmpSession.response(to: request("editor"), answers: [id: ["a", "b"]]).frame == ["type": "extension_ui_response", "id": "r", "value": "a\nb"])
+    }
+
+    // MARK: - Form fields (the `ask` tool's HTML form walk, recorded from omp 18.20)
+
+    private static let radio = OmpUIRequest([
+        "type": "extension_ui_request", "id": "r1", "method": "select", "title": "Context.\n\nApproach",
+        "options": ["Option X", "Option Y", "Other (type your own)"], "initialIndex": 0, "selectionMarker": "radio",
+    ])!
+
+    private static let checklist = OmpUIRequest([
+        "type": "extension_ui_request", "id": "c1", "method": "select", "title": "(2 selected) Scope",
+        "options": ["One", "Two", "Three", "Other (type your own)", "\u{f00c} Done selecting"],
+        "initialIndex": 0, "selectionMarker": "checkbox", "checkedIndices": [0, 1], "markableCount": 4,
+    ])!
+
+    @Test func aRadioFieldPicksItsOptionOrOtherFollowedByTheText() {
+        #expect(Self.radio.replies(to: ["Option Y"]) == [.select("Option Y")])
+        #expect(Self.radio.replies(to: ["DuckDB"]) == [.select("Other (type your own)"), .text("DuckDB")])
+        #expect(Self.radio.replies(to: []) == [])
+    }
+
+    @Test func aChecklistTogglesOnlyWhatChangedThenFinishes() {
+        #expect(Self.checklist.replies(to: ["One", "Two"]) == [.select("\u{f00c} Done selecting")])
+        #expect(Self.checklist.replies(to: ["Two", "Three"]) == [.select("One"), .select("Three"), .select("\u{f00c} Done selecting")])
+        #expect(Self.checklist.replies(to: []) == [.select("One"), .select("Two"), .select("\u{f00c} Done selecting")])
+        #expect(Self.checklist.replies(to: ["One", "Two", "mine"]) == [.select("Other (type your own)"), .text("mine"), .select("\u{f00c} Done selecting")])
+    }
+
+    @Test func aFormFieldAnswerSendsItsFirstReplyAndKeepsTheRestForTheFollowingDialogs() {
+        let id = OmpUIRequest.singleQuestionID
+        let (frame, followUps) = OmpSession.response(to: Self.checklist, answers: [id: ["Two"]])
+
+        #expect(frame == ["type": "extension_ui_response", "id": "c1", "value": "One"])
+        #expect(followUps == [.select("\u{f00c} Done selecting")])
+        #expect(OmpSession.response(to: Self.checklist, answers: [:]).frame == ["type": "extension_ui_response", "id": "c1", "cancelled": true])
     }
 
     // MARK: - Command lines

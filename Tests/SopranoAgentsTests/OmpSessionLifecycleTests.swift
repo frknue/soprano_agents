@@ -58,6 +58,15 @@ struct OmpSessionLifecycleTests {
         entry["parentId"] = leaf
         entries.append(entry)
         leaf = entry["id"]
+    labels = ["One", "Two", "Three", "Other (type your own)", "\uf00c Done selecting"]
+    checked = [0, 1]
+    asked = 0
+    interleave = False
+    def checklist():
+        global asked
+        asked += 1
+        out({"type": "extension_ui_request", "id": "ui-f%d" % asked, "method": "select", "title": "(%d selected) Scope" % len(checked),
+             "options": labels, "initialIndex": 0, "selectionMarker": "checkbox", "checkedIndices": checked, "markableCount": 4})
     steers = 0
     def user(text, steering=False):
         global turns
@@ -164,12 +173,29 @@ struct OmpSessionLifecycleTests {
                     out({"type": "tool_execution_start", "toolCallId": "t2", "toolName": "write", "args": {"path": "late.txt", "content": "x\n"}})
                     out({"type": "extension_ui_request", "id": "ui-2", "method": "select", "title": "Allow tool: write\nPath: late.txt",
                          "options": ["Approve", "Approve write for this session", "Deny"]})
+            elif "form" in msg["message"]:
+                # The `ask` tool's checkbox field: each answer toggles one option and the
+                # select comes again with the new state until "Done selecting".
+                interleave = "interleaved" in msg["message"]
+                checklist()
             elif "approve" in msg["message"]:
                 out({"type": "tool_execution_start", "toolCallId": "t1", "toolName": "bash", "args": {"command": "ls"}})
                 out({"type": "extension_ui_request", "id": "ui-1", "method": "select", "title": "Allow tool: bash\nCommand: ls",
                      "options": ["Approve", "Approve bash for this session", "Deny"]})
             else:
                 finish("completed")
+        elif kind == "extension_ui_response" and msg["id"].startswith("ui-f"):
+            if msg["value"].endswith("Done selecting"):
+                finish("completed")
+            else:
+                i = labels.index(msg["value"])
+                checked = [c for c in checked if c != i] if i in checked else sorted(checked + [i])
+                if interleave:
+                    # Another dialog (a parallel tool's question) lands before the field's next round.
+                    out({"type": "extension_ui_request", "id": "ui-u1", "method": "input", "title": "Unrelated"})
+                    out({"type": "extension_ui_request", "id": "ui-u2", "method": "select", "title": "Allow tool: bash\nCommand: ls", "options": labels})
+                    interleave = False
+                checklist()
         elif kind == "extension_ui_response" and msg["id"] == "ui-2":
             out({"type": "tool_execution_end", "toolCallId": "t2", "toolName": "write", "isError": False,
                  "result": {"content": [{"type": "text", "text": "Successfully wrote 2 bytes to late.txt"}], "details": {}}})
@@ -463,6 +489,54 @@ struct OmpSessionLifecycleTests {
             return nil
         }.last
         #expect(command?.status == .completed)
+    }
+
+    @Test func aChecklistAnswerTogglesEachChangedOptionThroughTheReSentSelectsWithoutAskingAgain() async throws {
+        let fake = try makeFake()
+        let session = OmpSession(executablePath: { fake.executable })
+        let recorder = Recorder(session)
+        _ = try await session.start(config(cwd: fake.directory.path))
+
+        _ = try await session.startTurn(input("fill the form"))
+        let asked = await recorder.wait { events in
+            events.contains { if case .userInputRequested = $0 { true } else { false } }
+        }
+        await session.answer(userInput: "ui-f1", answers: [OmpUIRequest.singleQuestionID: ["Two", "Three"]])
+        let finished = await recorder.wait(until: Self.completed)
+        await session.close()
+
+        #expect(asked && finished)
+        #expect(fake.received("extension_ui_response").map { $0["value"]?.stringValue } == ["One", "Three", "\u{f00c} Done selecting"])
+        let shown = recorder.events.filter { if case .userInputRequested = $0 { true } else { false } }
+        #expect(shown.count == 1)
+    }
+
+    @Test func aDialogArrivingDuringAChecklistWalkIsShownNotAnsweredByIt() async throws {
+        let fake = try makeFake()
+        let session = OmpSession(executablePath: { fake.executable })
+        let recorder = Recorder(session)
+        _ = try await session.start(config(cwd: fake.directory.path))
+
+        _ = try await session.startTurn(input("fill the interleaved form"))
+        _ = await recorder.wait { events in
+            events.contains { if case .userInputRequested = $0 { true } else { false } }
+        }
+        await session.answer(userInput: "ui-f1", answers: [OmpUIRequest.singleQuestionID: ["Two", "Three"]])
+        let finished = await recorder.wait(until: Self.completed)
+        await session.close()
+
+        #expect(finished)
+        #expect(fake.received("extension_ui_response").map { $0["id"]?.stringValue } == ["ui-f1", "ui-f2", "ui-f3"])
+        let input = recorder.events.compactMap { event -> String? in
+            if case let .userInputRequested(request) = event { return request.id }
+            return nil
+        }
+        let approvals = recorder.events.compactMap { event -> String? in
+            if case let .approvalRequested(request) = event { return request.id }
+            return nil
+        }
+        #expect(input == ["ui-f1", "ui-u1"])
+        #expect(approvals == ["ui-u2"])
     }
 
     @Test func interruptingAbortsThePrompt() async throws {

@@ -153,6 +153,10 @@ All notable changes to Soprano Agents are documented here. The format follows
 
 ### Fixed
 
+- omp forms (the `ask` tool's radio buttons, checkboxes and text fields) answer correctly:
+  a checkbox group is one checklist with its checked boxes ticked, submitted at once instead
+  of one toggle per round with a "Done selecting" row; the checked radio is preselected, "Other"
+  is the composer's free text, and text fields start with their default value.
 - Git: committing works with an untracked nested repository that has no commits yet; a new
   worktree whose submodules fail, or whose setup you stop or quit, is removed with its branch,
   and quit waits for that cleanup.

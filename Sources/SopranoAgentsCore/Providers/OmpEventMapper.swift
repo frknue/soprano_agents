@@ -2,6 +2,15 @@ import Foundation
 
 /// A dialog omp asks the host to render (`extension_ui_request` with `select`, `confirm`,
 /// `input`, `editor` or `ask`), kept until it is answered or withdrawn.
+///
+/// The `ask` tool walks an HTML form field by field (omp 18.20, recorded live): a radio group is
+/// a `select` with `selectionMarker:"radio"` (`initialIndex` = the checked radio); a checkbox
+/// group a `select` with `selectionMarker:"checkbox"`, `checkedIndices`, `markableCount` and
+/// trailing actions ("<icon> Done selecting"): each answer toggles one option and omp re-sends
+/// the `select` with the new state until the action is picked. Both end their markable rows with
+/// "Other (type your own)", whose pick is followed by an `input` for the text. Text fields are
+/// `editor` with `prefill`. The app shows each field as one question and replays the answer
+/// through these steps (`replies(to:)`).
 public struct OmpUIRequest: Sendable, Hashable {
     public enum Method: String, Sendable, Hashable {
         case select
@@ -11,11 +20,29 @@ public struct OmpUIRequest: Sendable, Hashable {
         case ask
     }
 
+    /// One answer to a dialog of a form field's walk.
+    public enum Reply: Sendable, Hashable {
+        /// Picks (or, in a checklist, toggles) this option label.
+        case select(String)
+        /// Free text for an `input` / `editor`.
+        case text(String)
+    }
+
     public var id: String
     public var method: Method
     public var title: String
     /// `select` labels (approval selects included).
     public var options: [String]
+    /// `select` `optionDetails[i].description`, aligned with `options`.
+    public var optionDescriptions: [String?]
+    /// `select` `selectionMarker`: "radio" or "checkbox" for form fields.
+    public var selectionMarker: String?
+    public var initialIndex: Int?
+    public var checkedIndices: [Int]
+    /// Leading options that get a marker; the rest are actions. nil = all.
+    public var markableCount: Int?
+    /// `editor` / `input` starting text.
+    public var prefill: String?
     /// Raw `ask` questions (`{id, question, header?, options:[{label, description?}], multi?}`).
     public var questions: [JSONValue]
 
@@ -39,11 +66,94 @@ public struct OmpUIRequest: Sendable, Hashable {
         self.method = method
         title = frame["title"]?.stringValue ?? ""
         options = (frame["options"]?.arrayValue ?? []).compactMap(\.stringValue)
+        let details = frame["optionDetails"]?.arrayValue ?? []
+        optionDescriptions = options.indices.map { details.indices.contains($0) ? details[$0]["description"]?.nonEmptyString : nil }
+        selectionMarker = frame["selectionMarker"]?.nonEmptyString
+        initialIndex = frame["initialIndex"]?.intValue
+        checkedIndices = (frame["checkedIndices"]?.arrayValue ?? []).compactMap(\.intValue)
+        markableCount = frame["markableCount"]?.intValue
+        prefill = frame["prefill"]?.stringValue
         questions = frame["questions"]?.arrayValue ?? []
     }
 
     /// The question id used for single-question dialogs (select/confirm/input/editor).
     public static let singleQuestionID = "answer"
+
+    // MARK: Form fields
+
+    /// A checkbox group's `select`.
+    public var isChecklist: Bool { method == .select && selectionMarker == "checkbox" }
+
+    private var markedIndices: Range<Int> {
+        0..<min(markableCount ?? options.count, options.count)
+    }
+
+    /// The form field's free-text row: its last marked option, "Other (type your own)".
+    public var otherIndex: Int? {
+        guard method == .select, selectionMarker != nil, let last = markedIndices.last,
+              options[last].hasPrefix("Other (") else { return nil }
+        return last
+    }
+
+    /// The indices of the options the user picks from: marked ones without the Other row.
+    public var choiceIndices: [Int] {
+        markedIndices.filter { $0 != otherIndex }
+    }
+
+    /// The checklist's finishing action ("Done selecting"), the first unmarked option.
+    public var doneLabel: String? {
+        guard isChecklist, markedIndices.upperBound < options.count else { return nil }
+        return options[markedIndices.upperBound]
+    }
+
+    /// The question text: the title without a checklist's "(N selected) " count.
+    public var questionText: String {
+        guard isChecklist, title.hasPrefix("("), let close = title.range(of: " selected) ") else { return title }
+        return String(title[close.upperBound...])
+    }
+
+    /// Whether `next` is the dialog of this field's walk that `reply` answers: the same field's
+    /// `select` again (same marker, options and question) for a pick or toggle, its `input` /
+    /// `editor` titled with the field's question for text. Approvals never are.
+    public func isFollowUp(_ next: OmpUIRequest, for reply: Reply) -> Bool {
+        guard !next.isApproval else { return false }
+        switch reply {
+        case .select:
+            return next.method == .select && next.selectionMarker == selectionMarker
+                && next.options == options && next.questionText == questionText
+        case .text:
+            return (next.method == .input || next.method == .editor) && next.title == questionText
+        }
+    }
+
+    /// The replies that answer this form field with `values` (option labels, anything else is
+    /// free text): the first answers this request, the rest the requests omp sends after it.
+    /// Empty = cancel. A radio picks its option, or Other then the text. A checklist toggles
+    /// every option whose state differs, Other (then the text) when free text is added, and
+    /// ends with its done action.
+    public func replies(to values: [String]) -> [Reply] {
+        let labels = choiceIndices.map { options[$0] }
+        let custom = values.filter { !labels.contains($0) }
+            .joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        let other = otherIndex.map { options[$0] }
+        if isChecklist {
+            guard let done = doneLabel else { return [] }
+            var replies: [Reply] = choiceIndices.compactMap { index in
+                checkedIndices.contains(index) == values.contains(options[index]) ? nil : .select(options[index])
+            }
+            if let other, let index = otherIndex {
+                if !custom.isEmpty, !checkedIndices.contains(index) {
+                    replies += [.select(other), .text(custom)]
+                } else if custom.isEmpty, checkedIndices.contains(index) {
+                    replies.append(.select(other))
+                }
+            }
+            return replies + [.select(done)]
+        }
+        if let picked = values.first(where: labels.contains) { return [.select(picked)] }
+        guard !custom.isEmpty, let other else { return [] }
+        return [.select(other), .text(custom)]
+    }
 }
 
 /// Translates omp `--mode rpc-ui` frames (with `set_event_filter {messageUpdates:"delta"}`)
@@ -659,8 +769,11 @@ public struct OmpEventMapper: Sendable {
 
     /// Non-approval dialogs → `UserInputRequest`. `ask`: every question (id, header, text,
     /// options with descriptions, `multi` → multiple, free text allowed); `select`: one question
-    /// with the labels; `confirm`: Yes/No; `input`/`editor`: free text only. Single-question
-    /// dialogs use question id `OmpUIRequest.singleQuestionID`.
+    /// with the labels and their `optionDetails`; a form field's `select` (radio / checkbox) only
+    /// its choices, free text for its Other row, the checked radio or boxes preselected, a
+    /// checkbox group as a multiple-choice checklist; `confirm`: Yes/No; `input`/`editor`: free
+    /// text only, starting with `prefill`. Single-question dialogs use question id
+    /// `OmpUIRequest.singleQuestionID`.
     public static func userInput(_ request: OmpUIRequest) -> UserInputRequest {
         let id = OmpUIRequest.singleQuestionID
         let questions: [UserInputQuestion]
@@ -679,12 +792,30 @@ public struct OmpEventMapper: Sendable {
                     allowsOther: true
                 )
             }
+        case .select where request.selectionMarker != nil:
+            let choices = request.choiceIndices
+            let options = choices.map { UserInputOption(label: request.options[$0], description: request.optionDescriptions[$0]) }
+            let initial: [String]? = if request.isChecklist {
+                choices.filter(request.checkedIndices.contains).map { request.options[$0] }
+            } else {
+                request.initialIndex.flatMap { choices.contains($0) ? [request.options[$0]] : nil }
+            }
+            questions = [UserInputQuestion(
+                id: id,
+                header: "",
+                question: request.questionText,
+                options: options,
+                allowsMultiple: request.isChecklist,
+                allowsOther: request.otherIndex != nil,
+                initialSelection: initial
+            )]
         case .select:
-            questions = [UserInputQuestion(id: id, header: "", question: request.title, options: request.options.map { UserInputOption(label: $0) }, allowsOther: false)]
+            let options = request.options.indices.map { UserInputOption(label: request.options[$0], description: request.optionDescriptions[$0]) }
+            questions = [UserInputQuestion(id: id, header: "", question: request.title, options: options, allowsOther: false)]
         case .confirm:
             questions = [UserInputQuestion(id: id, header: "", question: request.title, options: [UserInputOption(label: "Yes"), UserInputOption(label: "No")], allowsOther: false)]
         case .input, .editor:
-            questions = [UserInputQuestion(id: id, header: "", question: request.title, options: [], allowsOther: true)]
+            questions = [UserInputQuestion(id: id, header: "", question: request.title, options: [], allowsOther: true, initialText: request.prefill)]
         }
         return UserInputRequest(id: request.id, questions: questions)
     }

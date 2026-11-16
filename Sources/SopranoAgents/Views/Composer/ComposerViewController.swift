@@ -84,6 +84,16 @@ final class ComposerViewController: NSViewController, FocusRegionController, NST
         var selections: [String: [String]] = [:]
         /// Free text per question (the editor holds the current question's).
         var custom: [String: String] = [:]
+
+        init() {}
+
+        /// Starts from each question's initial selection and text.
+        init(_ request: UserInputRequest) {
+            for question in request.questions {
+                if let initial = question.initialSelection { selections[question.id] = initial }
+                if let text = question.initialText { custom[question.id] = text }
+            }
+        }
     }
 
     private enum PopoverKind {
@@ -508,6 +518,7 @@ final class ComposerViewController: NSViewController, FocusRegionController, NST
 
     private var placeholder: String {
         if let input = pendingInput, let draft = answers[input.id], let question = currentQuestion(draft, in: input) {
+            if question.allowsMultiple, question.allowsOther { return "Add your own answer, or leave this blank" }
             return question.allowsOther ? "Type your own answer, or leave this blank to use the selected option" : "Choose an option above"
         }
         if let subagent = currentSubagent {
@@ -575,7 +586,7 @@ final class ComposerViewController: NSViewController, FocusRegionController, NST
             previousButton.isHidden = draft.index == 0
             answerButton.isHidden = false
             answerButton.title = !isLast ? "Next question" : (draft.index > 0 ? "Submit answers" : "Submit answer")
-            answerButton.isEnabled = isLast ? isComplete(draft, input) : !answer(for: draft.index, draft, input).isEmpty
+            answerButton.isEnabled = isLast ? isComplete(draft, input) : isAnswered(draft.index, draft, input)
             primaryButton.isHidden = !(thread?.isRunning ?? false)
             primaryButton.update(.stop, tooltip: ComposerPrimaryAction.stop.tooltip(followUp: followUp), stopping: isStopping)
             return
@@ -817,17 +828,27 @@ final class ComposerViewController: NSViewController, FocusRegionController, NST
         return request.questions[draft.index]
     }
 
-    /// Free text wins over selected options.
+    /// Free text wins over selected options, except in a multiple-choice question that takes
+    /// free text: there it is one more answer.
     private func answer(for index: Int, _ draft: AnswerDraft, _ request: UserInputRequest) -> [String] {
         guard request.questions.indices.contains(index) else { return [] }
         let question = request.questions[index]
         let custom = (draft.custom[question.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let selected = draft.selections[question.id] ?? []
+        if question.allowsMultiple, question.allowsOther { return custom.isEmpty ? selected : selected + [custom] }
         if !custom.isEmpty { return [custom] }
-        return draft.selections[question.id] ?? []
+        return selected
+    }
+
+    /// A checklist (`initialSelection` set) is answered even with nothing checked.
+    private func isAnswered(_ index: Int, _ draft: AnswerDraft, _ request: UserInputRequest) -> Bool {
+        let question = request.questions[index]
+        if question.allowsMultiple, question.initialSelection != nil { return true }
+        return !answer(for: index, draft, request).isEmpty
     }
 
     private func isComplete(_ draft: AnswerDraft, _ request: UserInputRequest) -> Bool {
-        request.questions.indices.allSatisfy { !answer(for: $0, draft, request).isEmpty }
+        request.questions.indices.allSatisfy { isAnswered($0, draft, request) }
     }
 
     /// Enters, follows or leaves question mode as the thread's pending questions change.
@@ -844,7 +865,7 @@ final class ComposerViewController: NSViewController, FocusRegionController, NST
         if questionRequestID != request.id {
             if questionRequestID == nil { stashedText = editorText }
             questionRequestID = request.id
-            let draft = answers[request.id] ?? AnswerDraft()
+            let draft = answers[request.id] ?? AnswerDraft(request)
             answers[request.id] = draft
             editor.textView.setText(currentQuestion(draft, in: request).flatMap { draft.custom[$0.id] } ?? "")
         }
@@ -855,7 +876,7 @@ final class ComposerViewController: NSViewController, FocusRegionController, NST
             question: question,
             index: draft.index,
             total: request.questions.count,
-            selected: custom.isEmpty ? Set(draft.selections[question.id] ?? []) : [],
+            selected: custom.isEmpty || question.allowsMultiple ? Set(draft.selections[question.id] ?? []) : [],
             enabled: true
         )
     }
@@ -870,10 +891,10 @@ final class ComposerViewController: NSViewController, FocusRegionController, NST
             draft.selections[question.id] = chosen
         } else {
             draft.selections[question.id] = [label]
+            draft.custom[question.id] = ""
+            editor.textView.setText("")
         }
-        draft.custom[question.id] = ""
         answers[request.id] = draft
-        editor.textView.setText("")
         refresh()
         guard !question.allowsMultiple, draft.index < request.questions.count - 1 else { return }
         autoAdvance?.cancel()
@@ -907,7 +928,7 @@ final class ComposerViewController: NSViewController, FocusRegionController, NST
         autoAdvance?.cancel()
         guard let thread = currentThread, let request = pendingInput, let draft = answers[request.id] else { return }
         if draft.index < request.questions.count - 1 {
-            guard !answer(for: draft.index, draft, request).isEmpty else { return }
+            guard isAnswered(draft.index, draft, request) else { return }
             moveQuestion(by: 1)
             return
         }

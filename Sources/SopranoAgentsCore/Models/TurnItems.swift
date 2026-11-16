@@ -232,14 +232,31 @@ public struct UserInputQuestion: Codable, Sendable, Hashable, Identifiable {
     public var allowsMultiple: Bool
     /// A free-text answer is allowed besides the options.
     public var allowsOther: Bool
+    /// Options selected when the question appears (omp form fields: the checked radio, the
+    /// checked boxes). Non-nil on a multiple-choice question makes it a checklist, where
+    /// unchecking everything is an answer too.
+    public var initialSelection: [String]?
+    /// Free text the answer starts with (omp form text fields' value).
+    public var initialText: String?
 
-    public init(id: String, header: String, question: String, options: [UserInputOption], allowsMultiple: Bool = false, allowsOther: Bool = true) {
+    public init(
+        id: String,
+        header: String,
+        question: String,
+        options: [UserInputOption],
+        allowsMultiple: Bool = false,
+        allowsOther: Bool = true,
+        initialSelection: [String]? = nil,
+        initialText: String? = nil
+    ) {
         self.id = id
         self.header = header
         self.question = question
         self.options = options
         self.allowsMultiple = allowsMultiple
         self.allowsOther = allowsOther
+        self.initialSelection = initialSelection
+        self.initialText = initialText
     }
 }
 

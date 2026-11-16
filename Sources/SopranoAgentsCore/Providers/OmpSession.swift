@@ -85,6 +85,8 @@ public actor OmpSession: ProviderSession {
     private var currentFast = false
     private var approvalMode = ""
     private var pending: [String: OmpUIRequest] = [:]
+    /// The form field the user answered and its remaining replies (see `answerFollowUp`).
+    private var fieldWalk: (field: OmpUIRequest, replies: [OmpUIRequest.Reply])?
     /// Tools the app serves (`set_host_tools`), sent at every launch and on `setHostTools`.
     private var hostTools: [HostToolDefinition] = []
     /// Host tool calls reported to the engine and not answered yet (this process only).
@@ -225,24 +227,52 @@ public actor OmpSession: ProviderSession {
     /// Empty `answers` = the user dismissed the dialog (`cancelled:true`).
     public func answer(userInput id: String, answers: [String: [String]]) async {
         guard let request = pending.removeValue(forKey: id) else { return }
-        try? await client?.send(Self.response(to: request, answers: answers))
+        let (frame, followUps) = Self.response(to: request, answers: answers)
+        fieldWalk = followUps.isEmpty ? nil : (request, followUps)
+        try? await client?.send(frame)
     }
 
-    /// The `extension_ui_response` for a dialog: `ask` → `answers`; `select` → `value` (first
+    /// The `extension_ui_response` for a dialog: `ask` → `answers`; a form field's `select`
+    /// (radio / checkbox) → its first `OmpUIRequest.replies(to:)`, the rest returned as the
+    /// follow-ups that answer the dialogs omp sends next; other `select`s → `value` (first
     /// answer); `confirm` → `confirmed` ("Yes"); `input`/`editor` → `value` (answers joined).
-    static func response(to request: OmpUIRequest, answers: [String: [String]]) -> JSONValue {
+    static func response(to request: OmpUIRequest, answers: [String: [String]]) -> (frame: JSONValue, followUps: [OmpUIRequest.Reply]) {
+        let cancel = (OmpProtocol.uiCancel(id: request.id), [OmpUIRequest.Reply]())
         let values = answers[OmpUIRequest.singleQuestionID] ?? answers.values.first ?? []
-        guard !answers.isEmpty, request.method == .ask || !values.isEmpty else { return OmpProtocol.uiCancel(id: request.id) }
-        switch request.method {
-        case .ask:
-            return OmpProtocol.uiResponse(id: request.id, ["answers": .array(OmpProtocol.askAnswers(questions: request.questions, answers: answers))])
-        case .select:
-            return OmpProtocol.uiResponse(id: request.id, ["value": .string(values[0])])
-        case .confirm:
-            return OmpProtocol.uiResponse(id: request.id, ["confirmed": .bool(values[0].caseInsensitiveCompare("Yes") == .orderedSame)])
-        case .input, .editor:
-            return OmpProtocol.uiResponse(id: request.id, ["value": .string(values.joined(separator: "\n"))])
+        guard !answers.isEmpty else { return cancel }
+        if request.method == .select, request.selectionMarker != nil {
+            let replies = request.replies(to: values)
+            guard let first = replies.first else { return cancel }
+            return (reply(first, to: request.id), Array(replies.dropFirst()))
         }
+        guard request.method == .ask || !values.isEmpty else { return cancel }
+        let frame: JSONValue = switch request.method {
+        case .ask:
+            OmpProtocol.uiResponse(id: request.id, ["answers": .array(OmpProtocol.askAnswers(questions: request.questions, answers: answers))])
+        case .select:
+            OmpProtocol.uiResponse(id: request.id, ["value": .string(values[0])])
+        case .confirm:
+            OmpProtocol.uiResponse(id: request.id, ["confirmed": .bool(values[0].caseInsensitiveCompare("Yes") == .orderedSame)])
+        case .input, .editor:
+            OmpProtocol.uiResponse(id: request.id, ["value": .string(values.joined(separator: "\n"))])
+        }
+        return (frame, [])
+    }
+
+    private static func reply(_ reply: OmpUIRequest.Reply, to id: String) -> JSONValue {
+        switch reply {
+        case let .select(label), let .text(label): OmpProtocol.uiResponse(id: id, ["value": .string(label)])
+        }
+    }
+
+    /// Answers the next dialog of the answered field's walk from `fieldWalk` when it is that
+    /// field's (`OmpUIRequest.isFollowUp`); any other dialog is shown and the walk waits on.
+    private func answerFollowUp(_ request: OmpUIRequest) async -> Bool {
+        guard var walk = fieldWalk, let next = walk.replies.first, walk.field.isFollowUp(request, for: next) else { return false }
+        walk.replies.removeFirst()
+        fieldWalk = walk.replies.isEmpty ? nil : walk
+        try? await client?.send(Self.reply(next, to: request.id))
+        return true
     }
 
     /// `compact`, answered only once the compaction has ended. It is sent without a waiter, so
@@ -464,6 +494,7 @@ public actor OmpSession: ProviderSession {
         activePromptID = nil
         compactionID = nil
         pending.removeAll()
+        fieldWalk = nil
         cancelHostCalls()
     }
 
@@ -518,6 +549,8 @@ public actor OmpSession: ProviderSession {
         switch frame["type"]?.stringValue {
         case "extension_ui_request":
             if frame["method"]?.stringValue == "cancel" {
+                // A withdrawn dialog may be the walk's (omp gave up on the form).
+                fieldWalk = nil
                 guard let target = frame["targetId"]?.stringValue, pending.removeValue(forKey: target) != nil else { return }
             } else if let request = OmpUIRequest(frame) {
                 guard activePromptID != nil else {
@@ -525,6 +558,7 @@ public actor OmpSession: ProviderSession {
                     try? await client?.send(OmpProtocol.uiCancel(id: request.id))
                     return
                 }
+                if await answerFollowUp(request) { return }
                 pending[request.id] = request
             }
         case "response":
@@ -710,6 +744,7 @@ public actor OmpSession: ProviderSession {
         acceptsCommandOutput = false
         for (id, _) in pending { continuation.yield(.requestResolved(id: id)) }
         pending.removeAll()
+        fieldWalk = nil
     }
 
     private func finish(error: String?) {
