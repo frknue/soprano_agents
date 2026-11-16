@@ -29,7 +29,8 @@ All notable changes to Soprano Agents are documented here. The format follows
 - Phone access, on by default: Soprano Agents serves a web app on your tailnet through Tailscale
   Serve (`https://<your-mac>.<tailnet>.ts.net/`), installable on the iPhone's Home Screen. Pair a
   phone in Settings › Phone (QR code or Copy pairing link; Revoke devices there). From the phone:
-  the inbox, live threads, send, steer, queue and stop, photos and files attached from the phone
+  the inbox, live threads (a down-arrow button jumps back to the newest message after scrolling
+  up), send, steer, queue and stop, photos and files attached from the phone
   (camera, library or files; shown as thumbnails), approvals and questions, new threads
   (project, model, permissions, worktree), diffs per turn or thread, commit / push / PR, and
   terminals of its own in the thread's folder. Push notifications reach paired phones when a

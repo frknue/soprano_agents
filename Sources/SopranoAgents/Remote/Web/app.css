@@ -1499,6 +1499,48 @@ pre.command-line {
   margin-right: auto;
 }
 
+/* Scroll to the latest message: floats centered just above the dock while it is out of view. */
+.dock > .scroll-bottom {
+  position: absolute;
+  left: 50%;
+  top: -38px;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--foreground);
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--foreground) 16%, transparent), 0 1px 2px color-mix(in srgb, var(--foreground) 12%, transparent);
+  cursor: pointer;
+  animation: scroll-bottom-in 160ms ease-out;
+}
+
+.dock > .scroll-bottom[hidden] {
+  display: none;
+}
+
+.dock > .scroll-bottom:active {
+  transform: translateX(-50%) scale(0.94);
+}
+
+.dock > .scroll-bottom:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+@keyframes scroll-bottom-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(6px);
+  }
+}
+
 .pending {
   display: flex;
   flex-direction: column;

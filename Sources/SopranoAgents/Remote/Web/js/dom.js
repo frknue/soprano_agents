@@ -77,6 +77,7 @@ function gearPath() {
 const ICONS = {
   back: '<path d="M15 5l-7 7 7 7"/>',
   chevronDown: '<path d="M6 9l6 6 6-6"/>',
+  arrowDown: '<path d="M12 5v13.5M6 12.5l6 6 6-6"/>',
   chevronRight: '<path d="M9 6l6 6-6 6"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   compose: '<path d="M11 4H6.5A2.5 2.5 0 0 0 4 6.5v11A2.5 2.5 0 0 0 6.5 20h11a2.5 2.5 0 0 0 2.5-2.5V13"/><path d="M17.6 3.6a2 2 0 0 1 2.8 2.8L12 14.8l-3.6.8.8-3.6z"/>',

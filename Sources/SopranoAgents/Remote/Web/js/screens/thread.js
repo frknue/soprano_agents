@@ -134,7 +134,16 @@ export function mountThread(root, { id }) {
   const scroller = h('main', { class: 'scroll thread-scroll' }, h('div', { class: 'lane' }, timeline));
   const pending = h('div', { class: 'pending' });
   const compose = composer(id);
-  const dock = h('div', { class: 'dock' }, pending, compose.el);
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+  const toBottom = h('button', {
+    type: 'button',
+    class: 'scroll-bottom',
+    'aria-label': 'Scroll to the latest message',
+    title: 'Scroll to the latest message',
+    hidden: true,
+    onclick: () => scroller.scrollTo({ top: scroller.scrollHeight, behavior: reduceMotion.matches ? 'auto' : 'smooth' }),
+  }, icon('arrowDown', { size: 20 }));
+  const dock = h('div', { class: 'dock' }, toBottom, pending, compose.el);
   const headerHost = h('div');
   const screen = h('div', { class: 'screen thread' }, headerHost, scroller, dock);
   root.replaceChildren(screen);
@@ -145,11 +154,15 @@ export function mountThread(root, { id }) {
   let visitedKey = null;
   let headerSig = null;
 
+  // Shown while the newest message is out of view.
+  const updateToBottom = () => { toBottom.hidden = atBottom; };
   scroller.addEventListener('scroll', () => {
     atBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 48;
+    updateToBottom();
   }, { passive: true });
   const keepBottom = () => {
     if (atBottom) scroller.scrollTop = scroller.scrollHeight;
+    else updateToBottom();
   };
   const resizeObserver = new ResizeObserver(keepBottom);
   resizeObserver.observe(scroller);
@@ -241,6 +254,7 @@ export function mountThread(root, { id }) {
       scroller.scrollTop = scroller.scrollHeight;
       atBottom = true;
     }
+    updateToBottom();
     firstRender = false;
     // New answers while shown: mark the thread seen again.
     const summary = summaryFor(id);
