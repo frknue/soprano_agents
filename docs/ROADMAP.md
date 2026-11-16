@@ -3,7 +3,9 @@
 Deliberately not built yet, so nobody mistakes their absence for a bug. Geplante Arbeit steht in
 `docs/BACKLOG.md`.
 
-- Remote environments (SSH, Tailscale, relays, WSL), pairing, guest sharing.
+- Remote environments (SSH, relays, WSL), guest sharing. Phone access exists (the web app over
+  Tailscale Serve, Settings › Phone); it needs the Mac on and awake, and phone terminals are their
+  own shells, not the Mac's terminal tabs.
 - Agents other than omp and OpenCode (Codex, Claude Code, Cursor, upstream Pi, Grok, ACP registry
   agents).
 - Plan mode: omp's RPC has no plan-mode switch (OpenCode's plan agent is not offered either).
@@ -17,4 +19,3 @@ Deliberately not built yet, so nobody mistakes their absence for a bug. Geplante
   omp gets a fresh copy of an exported teammate, not the one with its conversation and memory.
 - Snooze, drag-and-drop inbox reordering, multi-select sidebar actions.
 - Custom themes, theme editor, VS Code theme import (the `theme` setting picks a Soprano theme).
-- Mobile and web clients.

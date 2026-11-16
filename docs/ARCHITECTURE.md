@@ -34,6 +34,7 @@ swift test
 | `Sources/SopranoAgentsCore/Git/` (rest) | Git | `GitRunner` (the only place that spawns git), `LiveGitService` (checkpoints, diffs, status, branches, worktrees, commit/push/PR via `gh`), parsers. |
 | `Sources/SopranoAgents/Theme/` | Shared kit | `Palette` + `PaletteCenter`, `Typography`, `Metrics`, `Radius`, `Icon`, `PaletteView`, `InteractiveView`, `GhostIconButton`, `TextButton`, `KbdView`. |
 | `Sources/SopranoAgents/Shell/`, `App/`, `Views/Palette/`, `Views/Settings/`, `Notifications/`, `Commands/AppCommand.swift`, `ShellCommands.swift` | Shell | App delegate, menus, window, workspace layout, `WorkspaceState`, settings (`SettingsCenter`, resolver, template), keymap + router, `Dialogs`, command palette, settings screen, notifications, snapshot harness. |
+| `Sources/SopranoAgents/Remote/` (Swift), `Remote/Web/` (web app), `App/ServeCommand.swift`, `Views/Settings/SettingsPhonePage.swift` | Remote | Phone access: `RemoteAccess` (lifecycle, login item, keep awake, push poster), `HTTPServer`, `RemoteAPI`, `RemoteStore` (pairing, devices, VAPID, subscriptions), `RemoteTerminals`, `RemoteTheme`, `TailscaleServe`, `WebPush`; the PWA; Settings › Phone; the `serve` harness. |
 | `Sources/SopranoAgents/Views/Sidebar/`, `Views/Chat/ChatHeaderView.swift`, `SidebarCommands.swift` | Sidebar | Thread inbox (with subagent rows under their thread's card, `SubagentActions`), the Team section (`SidebarTeamCells`), chat header + title-bar toggles. |
 | `Sources/SopranoAgents/Views/Team/`, `Commands/TeamCommands.swift` | Team | `TeamActions` (New / Edit / Delete Teammate, the teammate menu), `TeammateDialog`, `TeammateAvatarView`. |
 | `Sources/SopranoAgents/Views/Timeline/`, `TimelineCommands.swift` | Timeline | Message timeline, Markdown renderer, work log, cards. |
@@ -687,12 +688,112 @@ buttons, and the snapshot harness runs them with `--perform <id>`. `CommandConte
 reloaded; bad values become warnings. Keys: `theme`, `agents.{defaultProvider, defaultModel,
 defaultRuntimeMode}`, `providers.{ompPath, opencodePath}`, `textGeneration.{provider, model,
 titles}`, `worktrees.{directory, branchPrefix}`, `projects.directories`,
-`chat.{followUp, width, workLog}`, `notifications.{enabled, sound}`, `editor.app`,
+`chat.{followUp, width, workLog}`, `notifications.{enabled, sound}`, `remote.{enabled, port,
+httpsPort, launchAtLogin, preventSleep, push}`, `editor.app`,
 `keybindings.{prefixKey, prefixTimeoutMs, bindings}`. `defaultProvider` /
 `textGeneration.provider` are `omp` or `opencode` (default omp); a model setting names a model of
 that agent, absent = that agent's configured model. `AppSettings.engineSettings` feeds
 `AgentEngine.settings`. Window geometry, panel widths and per-thread UI state stay in
 `UserDefaults`.
+
+### Remote access: phone web app (`Sources/SopranoAgents/Remote/`)
+
+The app serves its own web app so threads can be continued from a phone. It is on by default
+(`remote.enabled`) and reaches the phone only through the tailnet:
+
+- `RemoteServer` (Network.framework `NWListener`) listens on `127.0.0.1:<remote.port>` (default
+  47261), plain HTTP/1.1, one request per connection (`Connection: close`), except the
+  server-sent event streams, which stay open. It never binds another interface.
+- `TailscaleServe` publishes it with `tailscale serve --bg --https=<remote.httpsPort>
+  http://127.0.0.1:<port>` (default 443) and reads the device's MagicDNS name from
+  `tailscale status --json` for the URL (`https://<name>.<tailnet>.ts.net/`). It never replaces
+  a serve config on that HTTPS port that points elsewhere (Settings shows the conflict) and turns
+  its own off when remote access is disabled. A failed publish (Tailscale not running yet, a
+  conflict) or server start (port taken) is retried after 5, 15, 30, then every 60 s while remote
+  access is on; Settings › Phone's Retry publishes at once. Changes run in order: a new server
+  waits until the old one released its port, a publish until the previous unpublish finished
+  (and an unpublish until a publish still in flight finished). Tailscale Serve terminates TLS, so the origin is
+  HTTPS (needed for the service worker, Web Push and WebCrypto).
+- Pairing: Settings → Phone shows the URL, a QR code and "Copy pairing link"
+  (`https://<host>/#pair=<code>`); the code (32 random bytes, base64url) stays valid until "New
+  pairing link". The web app redeems it (`POST /api/pair`) for a device token (32 random bytes),
+  kept in `localStorage` and sent as `Authorization: Bearer <token>`; the server stores only its
+  SHA-256 with the device name and dates in `<app data>/remote.json` (Settings lists devices,
+  Revoke drops one with its push subscriptions, which belong to the device that made them, and
+  ends its open event and terminal streams). Every `/api/*` route except `/api/pair` needs a valid token (401 otherwise);
+  static files and `/theme.css` need none.
+- `RemoteAPI` maps HTTP to `AgentEngine` (the only state it touches; it behaves like a view).
+  `RemoteTerminals` runs the phone's own shells (SwiftTerm `LocalProcess`, headless) in a
+  thread's working directory, separate from the Mac's terminal views, with a 256 KB scrollback
+  replayed to every new output stream. `WebPush` (VAPID, RFC 8291 `aes128gcm`, RFC 8292) sends
+  push messages to subscribed devices.
+- Lifecycle: with remote access on, closing the last window keeps the app running,
+  `remote.launchAtLogin` registers the installed app as a login item (`SMAppService.mainApp`),
+  and `remote.preventSleep` holds a "prevent idle system sleep" assertion while on AC power.
+  A closed lid still sleeps the Mac.
+- Push (`remote.push`): when a thread turns Done, Failed, Approval or Input (the same alerts as
+  `ThreadNotifier`) while the Mac's user is away (the app is not active, or no input for 2
+  minutes), every subscribed device gets `{title, body, threadID}`. Subscriptions answered 404
+  or 410 are dropped.
+
+The web app (`Remote/Web/`, copied into the resource bundle) is plain HTML, CSS and ES modules
+without a build step; `vendor/` holds xterm.js and its fit addon. It is a PWA
+(`manifest.webmanifest`, `sw.js`): installable to the home screen, cached shell, push. Colors come
+from `/theme.css`, generated from the palette in force (CSS variables named after `Palette`
+properties, kebab-case: `--background`, `--foreground`, `--card`, `--muted`, `--muted-foreground`,
+`--secondary-label`, `--border`, `--primary`, `--primary-foreground`, `--accent`,
+`--message-surface`, `--message-foreground`, `--sidebar`, `--error`, `--warning`, `--success`,
+`--info`, `--diff-addition-*`, `--diff-deletion-*`, `--code-background`, `--terminal-*`,
+`--terminal-ansi-0` … `-15`, plus `color-scheme`).
+
+**HTTP API** (JSON bodies, dates ISO 8601, errors `{"error": "<message>"}` with a 4xx/5xx
+status). Domain values are the Core models' `Codable` JSON: `Project`, `AgentThread`, `Turn`,
+`TurnItem`, `ProviderStatus`, `ModelSelection`. Enums with associated values encode as
+`{"<case>": {<labels>}}`, unlabeled payloads as `{"<case>": {"_0": …}}` (e.g. item kind
+`{"command": {"_0": {"command": "ls", "output": "…", "exitCode": 0}}}`,
+`{"assistantMessage": {"text": "…", "isFinal": true}}`).
+
+`ThreadSummary`: `{id, projectID, title, status: "approval"|"input"|"working"|"failed"|"done"|
+"idle", workingSince, section: "pinned"|"working"|"blocked"|"failed"|"done"|"idle"|"settled"|
+"team", pinned, settled, activityDate, updatedAt, branch, worktree: Bool, model:
+ModelSelection, runtimeMode, isRunning, preview, teammate}` (`preview`: the last final answer or
+else the last user message, ≤ 160 characters; `teammate`: the teammate's name or null).
+Archived threads are left out.
+
+| Route | Does |
+|---|---|
+| `POST /api/pair {code, name}` | → `{token}`; 403 for an unknown code. |
+| `GET /api/state` | → `{projects, threads: [ThreadSummary], providers, defaults: {model, runtimeMode}, runtimeModes: [{id, title, summary}], host, version}`. |
+| `GET /api/events` | Server-sent events (see below). |
+| `GET /api/threads/{id}` | → `{thread: AgentThread, summary: ThreadSummary}`. |
+| `POST /api/threads {projectID, text, model, runtimeMode, workspace, attachments?}` | `workspace`: `{"kind": "projectRoot"}` or `{"kind": "newWorktree", "baseBranch": "main"}`; `attachments`: upload ids → `{threadID}`. |
+| `PATCH /api/threads/{id} {title?, pinned?, settled?, archived?}` | → 204. |
+| `POST /api/threads/{id}/visited` | Marks the thread seen (clears Done/Failed). |
+| `POST /api/threads/{id}/messages {text, mode, attachments?}` | `mode`: `automatic` (start or steer), `steer`, `queue`; `attachments`: upload ids (`text` may then be empty). |
+| `POST /api/attachments` | Raw file bytes, `Content-Type`, `X-Filename` (percent-encoded; folders dropped) → `Attachment` (stored by `importAttachment`, kept in memory until a message sends it; ≤ 25 MB). |
+| `GET /api/attachments/{id}` | The bytes of an unsent upload or of any message's attachment. |
+| `POST /api/threads/{id}/interrupt` | Stop. |
+| `POST /api/threads/{id}/approvals/{approvalID} {decision}` | `accept`, `acceptForSession`, `decline`, `cancel`. |
+| `POST /api/threads/{id}/inputs/{requestID} {answers}` | `answers`: question id → labels or free text. `DELETE` dismisses. |
+| `POST /api/threads/{id}/queue/{messageID}/send`, `DELETE …/queue/{messageID}` | Send a queued message now / drop it. |
+| `GET /api/threads/{id}/diff?turn=<ordinal>` | → `{diff}` (unified); without `turn` the whole thread. |
+| `GET /api/threads/{id}/git` | → `{isRepository, branch, isDefaultBranch, hasRemote, hasUpstream, ahead, behind, files: [{path, additions, deletions}], pullRequest: {number, url, title, state} \| null}`. |
+| `POST /api/threads/{id}/git {action, commitMessage?, featureBranch?}` | `action`: `commit`, `push`, `create_pr`, `commit_push`, `commit_push_pr` → `{title, detail, pullRequestURL}` (waits for the action). |
+| `GET /api/projects/{id}/branches` | → `{current, branches: [String]}` (local branches). |
+| `GET /api/threads/{id}/terminals` | → `{terminals: [{id, threadID, title, running}]}`. |
+| `POST /api/threads/{id}/terminals {cols, rows}` | → the new terminal. |
+| `GET /api/terminals/{id}/output` | SSE: `output {data: base64}` (the scrollback first), `exit {code}`. |
+| `POST /api/terminals/{id}/input {data}`, `…/resize {cols, rows}`, `DELETE /api/terminals/{id}` | Keystrokes (UTF-8 text), size, close. |
+| `GET /api/push/key` | → `{publicKey}` (VAPID, base64url uncompressed P-256). |
+| `POST /api/push/subscriptions {endpoint, keys: {p256dh, auth}}`, `DELETE … {endpoint}` | Subscribe / unsubscribe this device. |
+
+`GET /api/events` (`text/event-stream`; the web app reads it with `fetch`, since `EventSource`
+cannot send the token) sends `event: <name>` / `data: <json>`: `state` (the `/api/state` body)
+first, then `threads {threads}` (summaries after list or thread changes, coalesced 150 ms),
+`thread {threadID}` (that thread changed: refetch it if shown, coalesced 150 ms), `item
+{threadID, turnID, item}` (a streaming item's latest value, coalesced 100 ms), `projects
+{projects}`, `providers {providers}`, `terminals {threadID, terminals}`, and a `: ping` comment
+every 15 s.
 
 ## Keyboard model
 
@@ -851,10 +952,16 @@ router as global). A right-panel terminal tab is focus region `terminal`, like t
 
 ## Verification harness
 
+`SopranoAgents serve [--fixture <scenario>] [--port 47299] [--theme <id>] [--appearance
+light|dark]` serves the phone web app and the real `RemoteAPI` over a `DemoFixtures` engine on
+`http://127.0.0.1:<port>/` (fresh remote state in a temporary folder; prints the pairing link and
+a ready device token) until killed, for working on `Remote/Web/` in a browser at a phone viewport.
+The web files come from the build's resource bundle: `swift build` after editing them.
+
 `SopranoAgents snapshot --out <png> [--fixture demo|running|stopping|editing|approval|input|failed|background|answered|rechecked|subagents|subagent|draft|empty|team|teammate]
 [--size 1440x900] [--appearance light|dark] [--theme <id>] [--hide-sidebar] [--details]
 [--terminal] [--right-panel] [--diff thread|turn:<n>|uncommitted] [--open-file <path>]… [--perform <command id>]…
-[--settings general|providers|accounts|text-generation|worktrees|notifications|keybindings|archive|about]
+[--settings general|providers|accounts|text-generation|worktrees|notifications|phone|keybindings|archive|about]
 [--accounts none|demo|empty|pending] [--work-log detailed|minimal]
 [--dialog confirm|choose|prompt|alert] [--type "<text>"] [--keys "<chord> …"] [--hover <label>]
 [--click <label>]… [--wait <seconds>]` builds the real window offscreen on a `DemoFixtures` scenario and writes a PNG

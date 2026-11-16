@@ -63,6 +63,23 @@ struct AppSettings: Equatable, Sendable {
     var notificationsEnabled = true
     var notificationSound = true
 
+    /// Phone access (`remote.*`): the web app served over Tailscale Serve.
+    struct Remote: Equatable, Sendable {
+        var enabled = true
+        /// Local port of the server (127.0.0.1 only).
+        var port = 47261
+        /// HTTPS port Tailscale Serve publishes it on.
+        var httpsPort = 443
+        /// Start the installed app at login.
+        var launchAtLogin = true
+        /// Keep the Mac awake on AC power.
+        var preventSleep = true
+        /// Push notifications to paired devices.
+        var push = true
+    }
+
+    var remote = Remote()
+
     /// Open-in-editor target id (`cursor`, `vscode`, `zed`, `xcode`, `finder`, …); nil = first installed.
     var editorApp: String?
 

@@ -48,12 +48,20 @@ protocol ThreadNotificationPosting: AnyObject {
 ///   hides their pills. A settled thread waiting on Approval or Input still counts, and so does a
 ///   settled thread that is also pinned (it shows in Pinned).
 /// - Clicking a notification calls `onOpen` with the thread id.
+/// - The same alerts go to `remote` (push to paired phones) while the user is away from the Mac
+///   (`isUserAway`: the app is not active, or no input for `awayAfter`), whatever
+///   `notifications.enabled` says.
 @MainActor
 final class ThreadNotifier {
+    /// No keyboard or mouse input for this long counts as away.
+    static let awayAfter: TimeInterval = 120
+
     private let engine: AgentEngine
     private let settings: () -> AppSettings
     private let isAppActive: () -> Bool
+    private let isUserAway: () -> Bool
     private let poster: ThreadNotificationPosting?
+    private let remote: ThreadNotificationPosting?
     private let setBadge: @MainActor (Int) -> Void
     private var alerts: [String: ThreadAlert?] = [:]
     private(set) var badgeCount = 0
@@ -62,13 +70,17 @@ final class ThreadNotifier {
         engine: AgentEngine,
         settings: @escaping () -> AppSettings = { SettingsCenter.shared.settings },
         isAppActive: @escaping () -> Bool = { NSApp.isActive },
+        isUserAway: (() -> Bool)? = nil,
         poster: ThreadNotificationPosting?,
+        remote: ThreadNotificationPosting? = nil,
         setBadge: @escaping @MainActor (Int) -> Void = ThreadNotifier.setDockBadge
     ) {
         self.engine = engine
         self.settings = settings
         self.isAppActive = isAppActive
+        self.isUserAway = isUserAway ?? { !isAppActive() || ThreadNotifier.idleSeconds() >= ThreadNotifier.awayAfter }
         self.poster = poster
+        self.remote = remote
         self.setBadge = setBadge
         for thread in engine.threads where thread.archivedAt == nil {
             // updateValue keeps threads without an alert as known (`nil` value, not a missing key).
@@ -95,6 +107,9 @@ final class ThreadNotifier {
             if !active, preferences.notificationsEnabled {
                 poster?.post(threadID: thread.id, alert: alert, body: thread.title, sound: preferences.notificationSound)
             }
+            if remote != nil, isUserAway() {
+                remote?.post(threadID: thread.id, alert: alert, body: thread.title, sound: true)
+            }
         }
         alerts = current
         updateBadge()
@@ -113,6 +128,11 @@ final class ThreadNotifier {
 
     static func setDockBadge(_ count: Int) {
         NSApp?.dockTile.badgeLabel = count == 0 ? nil : String(count)
+    }
+
+    /// Seconds since the last keyboard or mouse input on this Mac.
+    static func idleSeconds() -> TimeInterval {
+        CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!)
     }
 }
 

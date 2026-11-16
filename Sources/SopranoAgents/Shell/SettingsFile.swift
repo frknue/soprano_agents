@@ -144,6 +144,18 @@ enum SettingsFile {
             "sound": true
           },
 
+          "remote": {
+            // Phone access: a web app on your tailnet (Tailscale Serve). Pair a phone in Settings › Phone.
+            "enabled": true,
+            // Local port (127.0.0.1 only) and the HTTPS port Tailscale publishes it on.
+            "port": 47261,
+            "httpsPort": 443,
+            // Keep it reachable: start at login, keep the Mac awake on power, push to paired phones.
+            "launchAtLogin": true,
+            "preventSleep": true,
+            "push": true
+          },
+
           "editor": {
             // Open in editor: "cursor", "vscode", "zed", "xcode", "finder", … Omit for the first installed.
             // "app": "cursor"

@@ -26,6 +26,16 @@ All notable changes to Soprano Agents are documented here. The format follows
   titles, branch names and commit messages; `providers.opencodePath` if `opencode` is not on
   `PATH`. Settings → Providers shows each agent's status. Statistics, Accounts and word
   completion stay omp's.
+- Phone access, on by default: Soprano Agents serves a web app on your tailnet through Tailscale
+  Serve (`https://<your-mac>.<tailnet>.ts.net/`), installable on the iPhone's Home Screen. Pair a
+  phone in Settings › Phone (QR code or Copy pairing link; Revoke devices there). From the phone:
+  the inbox, live threads, send, steer, queue and stop, photos and files attached from the phone
+  (camera, library or files; shown as thumbnails), approvals and questions, new threads
+  (project, model, permissions, worktree), diffs per turn or thread, commit / push / PR, and
+  terminals of its own in the thread's folder. Push notifications reach paired phones when a
+  thread finishes, fails or needs you while you are away from the Mac. With phone access on,
+  closing the window keeps the app running, it opens at login and keeps the Mac awake on power.
+  Settings: `remote.enabled`, `port`, `httpsPort`, `push`, `launchAtLogin`, `preventSleep`.
 - Team: long-lived omp teammates such as a CTO or a frontend engineer. New Teammate… (the `+` on
   the sidebar's Team section, or the command palette) sets a name, a handle (`cto`), a role,
   standing instructions and a home folder (a project or its own). Each teammate is one ongoing

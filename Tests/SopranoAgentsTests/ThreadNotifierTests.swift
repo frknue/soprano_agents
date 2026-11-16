@@ -94,6 +94,28 @@ struct ThreadNotifierTests {
         #expect(notifier.badgeCount == 2)
     }
 
+    @Test func pushGoesToPairedPhonesOnlyWhileTheUserIsAwayEvenWithDesktopNotificationsOff() {
+        let engine = engine([runningThread("t1", title: "A"), runningThread("t2", title: "B")])
+        let desktop = Recorder()
+        let phone = Recorder()
+        var away = false
+        var settings = AppSettings.defaults
+        settings.notificationsEnabled = false
+        let notifier = ThreadNotifier(
+            engine: engine, settings: { settings }, isAppActive: { true }, isUserAway: { away },
+            poster: desktop, remote: phone, setBadge: { _ in }
+        )
+
+        finish(engine, "t1", .completed)
+        away = true
+        requestApproval(engine, "t2")
+
+        #expect(desktop.posted.isEmpty)
+        #expect(phone.posted.map(\.threadID) == ["t2"])
+        #expect(phone.posted.map(\.alert) == [.approval])
+        withExtendedLifetime(notifier) {}
+    }
+
     @Test func soundFollowsTheSetting() {
         let engine = engine([runningThread("t1", title: "A")])
         let recorder = Recorder()

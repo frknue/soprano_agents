@@ -162,7 +162,7 @@ final class ThreadTerminalStore: NSObject, LocalProcessTerminalViewDelegate {
 
     /// Waits for the ended shell so it does not stay a zombie: SwiftTerm's `terminate()` cancels
     /// its exit monitor, the only `waitpid` it makes.
-    private nonisolated static func reap(_ pid: pid_t) {
+    nonisolated static func reap(_ pid: pid_t) {
         let exit = DispatchSource.makeProcessSource(identifier: pid, eventMask: .exit, queue: .global(qos: .utility))
         exit.setEventHandler {
             // The process has exited, so a blocking wait returns at once; it never depends on

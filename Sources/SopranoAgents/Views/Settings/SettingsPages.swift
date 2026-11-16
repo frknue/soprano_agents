@@ -12,6 +12,7 @@ extension SettingsController {
         case .textGeneration: textGenerationPage(form)
         case .worktrees: worktreesPage(form)
         case .notifications: notificationsPage(form)
+        case .phone: phonePage(form)
         case .keybindings: keybindingsPage(form)
         case .archive: archivePage(form)
         case .about: aboutPage(form)

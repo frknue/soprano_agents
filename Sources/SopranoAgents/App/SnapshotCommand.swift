@@ -195,6 +195,7 @@ enum SnapshotCommand {
             await settle(0.2)
         }
         if let page = options.settings {
+            if page == .phone { RemoteAccess.installFixture() }
             SettingsController.present(page: page, engine: built.engine, over: window)
             await settle(0.25)
         }

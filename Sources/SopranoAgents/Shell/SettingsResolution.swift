@@ -64,7 +64,7 @@ enum SettingsResolver {
             issues.append(ConfigIssue(severity: .warning, message: message))
         }
 
-        let knownTopLevel: Set<String> = ["theme", "agents", "providers", "textGeneration", "worktrees", "projects", "chat", "notifications", "editor", "keybindings"]
+        let knownTopLevel: Set<String> = ["theme", "agents", "providers", "textGeneration", "worktrees", "projects", "chat", "notifications", "remote", "editor", "keybindings"]
         for key in root.keys.sorted() where !knownTopLevel.contains(key) {
             warn("Unknown setting \"\(key)\".")
         }
@@ -221,6 +221,29 @@ enum SettingsResolver {
             }
             if let value = notifications["sound"] {
                 if let enabled = value as? Bool { result.settings.notificationSound = enabled } else { warn("notifications.sound must be true or false.") }
+            }
+        }
+
+        if let remote = section("remote", in: root, warn: warn) {
+            let flags: [(String, WritableKeyPath<AppSettings.Remote, Bool>)] = [
+                ("enabled", \.enabled), ("launchAtLogin", \.launchAtLogin), ("preventSleep", \.preventSleep), ("push", \.push),
+            ]
+            let ports: [(String, WritableKeyPath<AppSettings.Remote, Int>)] = [("port", \.port), ("httpsPort", \.httpsPort)]
+            let known = Set(flags.map(\.0) + ports.map(\.0))
+            for key in remote.keys.sorted() where !known.contains(key) {
+                warn("Unknown setting \"remote.\(key)\".")
+            }
+            for (key, path) in flags {
+                guard let value = remote[key] else { continue }
+                if let flag = value as? Bool { result.settings.remote[keyPath: path] = flag } else { warn("remote.\(key) must be true or false.") }
+            }
+            for (key, path) in ports {
+                guard let value = remote[key] else { continue }
+                if let port = integer(value), (1...65535).contains(port) {
+                    result.settings.remote[keyPath: path] = port
+                } else {
+                    warn("remote.\(key) must be a port number (1–65535).")
+                }
             }
         }
 

@@ -8,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private(set) var engine: AgentEngine?
     private var menuController: MainMenuController?
     private var notifier: ThreadNotifier?
+    private var remote: RemoteAccess?
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         Self.installApplicationIcon()
@@ -41,6 +42,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             EngineFactory.executablePaths.update(current.engineSettings)
             self?.engine?.settings = current.engineSettings
             self?.menuController?.install()
+            self?.remote?.apply(current.remote)
         }
 
         let controller = MainWindowController(engine: engine)
@@ -50,7 +52,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
 
         let poster = UserNotificationPoster.make { [weak self] threadID in self?.openThread(threadID) }
-        notifier = ThreadNotifier(engine: engine, poster: poster)
+        let remote = RemoteAccess(engine: engine, dataDirectory: AppPaths.dataDirectory())
+        self.remote = remote
+        remote.apply(settings.settings.remote)
+        notifier = ThreadNotifier(engine: engine, poster: poster, remote: WebPushPoster(access: remote))
 
         Task { await engine.refreshProviders() }
     }
@@ -63,8 +68,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    /// With phone access on, the app keeps running without a window so the phone can reach it.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        true
+        !(remote?.isEnabled ?? false)
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -76,6 +82,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let engine else { return .terminateNow }
         Task { @MainActor in
             await engine.shutdown()
+            self.remote?.shutdown()
             NSApp.reply(toApplicationShouldTerminate: true)
         }
         return .terminateLater

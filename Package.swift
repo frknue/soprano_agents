@@ -28,11 +28,15 @@ let package = Package(
             exclude: ["Vendored/SOPRANO_COMMIT"],
             resources: [
                 .copy("Resources/AppIcon.icns"),
+                // The phone web app served by `RemoteServer` (static files, no build step).
+                .copy("Remote/Web"),
             ],
             linkerSettings: [
                 .linkedFramework("CoreServices"),
                 .linkedFramework("UniformTypeIdentifiers"),
                 .linkedFramework("UserNotifications"),
+                .linkedFramework("ServiceManagement"),
+                .linkedFramework("IOKit"),
             ]
         ),
         .testTarget(

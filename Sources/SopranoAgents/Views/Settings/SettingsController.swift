@@ -94,6 +94,10 @@ final class SettingsController: NSObject {
                 break
             }
         }
+        RemoteAccess.current?.addObserver(self) { [weak self] in
+            guard let self, page == .phone else { return }
+            scheduleRender()
+        }
         window.backdrop.onClick = { [weak self] in self?.close() }
         window.keyHandler = { [weak self] event in self?.handleKey(event) ?? false }
         accounts.addObserver(id: accountsObserverID) { [weak self] _ in

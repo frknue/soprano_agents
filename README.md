@@ -96,6 +96,13 @@ The installer never restarts a running Soprano Agents; the update applies on the
 projects and settings pages. When the app is in the background, finished, failed and
 waiting threads post a notification, and the Dock icon counts threads waiting for you.
 
+**Phone.** With Tailscale on the Mac and the phone, Soprano Agents publishes a web app at
+`https://<your-mac>.<tailnet>.ts.net/` (only your tailnet reaches it). Scan the QR code in
+**Settings › Phone** to open it, add it to the Home Screen from Safari's Share menu, and paste the
+pairing link when it asks. It has the inbox, live threads, photos and files from the phone, approvals and questions, new threads,
+diffs, git actions, its own terminals and push notifications. The app keeps running without a
+window, opens at login and keeps the Mac awake on power while phone access is on.
+
 ## Keyboard shortcuts
 
 Every shortcut can be changed in **Settings › Keybindings** (Record, Off, Reset) or in

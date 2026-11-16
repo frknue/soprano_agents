@@ -1,0 +1,13 @@
+{
+  "name": "Soprano Agents",
+  "short_name": "Agents",
+  "description": "Continue your Soprano Agents threads from your phone.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

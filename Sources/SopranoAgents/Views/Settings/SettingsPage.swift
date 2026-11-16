@@ -9,6 +9,7 @@ enum SettingsPage: String, CaseIterable, Sendable {
     case textGeneration = "text-generation"
     case worktrees
     case notifications
+    case phone
     case keybindings
     case archive
     case about
@@ -21,6 +22,7 @@ enum SettingsPage: String, CaseIterable, Sendable {
         case .textGeneration: "Text generation"
         case .worktrees: "Worktrees"
         case .notifications: "Notifications"
+        case .phone: "Phone"
         case .keybindings: "Keybindings"
         case .archive: "Archive"
         case .about: "About"
@@ -36,6 +38,7 @@ enum SettingsPage: String, CaseIterable, Sendable {
         case .textGeneration: "text.bubble"
         case .worktrees: Icon.gitBranch
         case .notifications: "bell"
+        case .phone: "iphone"
         case .keybindings: "keyboard"
         case .archive: "archivebox"
         case .about: "info.circle"
@@ -63,6 +66,10 @@ enum SettingsPage: String, CaseIterable, Sendable {
             [("Worktree location", "folder directory path"), ("Branch prefix", "worktree branch naming")]
         case .notifications:
             [("Thread notifications", "notification alert completion input approval desktop dock badge"), ("Notification sound", "sound")]
+        case .phone:
+            [("Phone access", "remote mobile iphone web app pwa tailscale serve tailnet"), ("Pair a phone", "pairing link qr code device"),
+             ("Paired devices", "revoke forget"), ("Push notifications", "push phone alerts"),
+             ("Open at login", "launch login item start"), ("Keep awake", "sleep power"), ("Ports", "port https")]
         case .keybindings:
             [("Keyboard shortcuts", "keybindings shortcuts chords prefix record")]
         case .archive:
