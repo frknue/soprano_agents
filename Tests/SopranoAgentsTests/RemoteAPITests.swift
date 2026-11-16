@@ -75,11 +75,11 @@ struct RemoteAPITests {
             return response(await f.api.handle(request("POST", "/api/push/subscriptions", token: token, body: body)))?.status
         }
 
-        #expect(await subscribe(f.token, "https://push.example/phone") == 204)
-        #expect(await subscribe(other, "https://push.example/ipad") == 204)
+        #expect(await subscribe(f.token, "https://web.push.apple.com/phone") == 204)
+        #expect(await subscribe(other, "https://web.push.apple.com/ipad") == 204)
         f.store.revoke(deviceID: f.store.devices.first { $0.name == "Test phone" }!.id)
 
-        #expect(f.store.subscriptions.map(\.endpoint) == ["https://push.example/ipad"])
+        #expect(f.store.subscriptions.map(\.endpoint) == ["https://web.push.apple.com/ipad"])
     }
 
     @Test func theStateListsUnarchivedThreadsAsSummaries() async {
@@ -132,7 +132,7 @@ struct RemoteAPITests {
 
     @Test func theEventStreamStartsWithTheStateAndReportsThreadChanges() async throws {
         let f = fixture()
-        let (server, port) = try await serve(f.api)
+        let (server, port) = try await serve(f)
         defer { server.stop() }
         let lines = try await eventLines(port: port, path: "/api/events", token: f.token)
 
@@ -148,7 +148,7 @@ struct RemoteAPITests {
 
     @Test func revokingAPhoneEndsItsOpenEventStreamBeforeTheNextChange() async throws {
         let f = fixture()
-        let (server, port) = try await serve(f.api)
+        let (server, port) = try await serve(f)
         defer { server.stop() }
         let lines = try await eventLines(port: port, path: "/api/events", token: f.token)
 
@@ -170,7 +170,7 @@ struct RemoteAPITests {
 
     @Test func aPhotoUploadedOverTheNetworkIsSentWithTheMessageAndServedBack() async throws {
         let f = fixture()
-        let (server, port) = try await serve(f.api)
+        let (server, port) = try await serve(f)
         defer { server.stop() }
         // Several MB, as a phone photo: arrives in many reads.
         let photo = Data((0..<(3 << 20)).map { UInt8(truncatingIfNeeded: $0 &* 31) })
@@ -209,7 +209,7 @@ struct RemoteAPITests {
 
     @Test func aPhoneTerminalRunsInTheThreadFolderAndEchoesWhatIsTyped() async throws {
         let f = fixture()
-        let (server, port) = try await serve(f.api)
+        let (server, port) = try await serve(f)
         defer {
             server.stop()
             f.terminals.closeAll()
@@ -238,11 +238,12 @@ struct RemoteAPITests {
 
     // MARK: - Network helpers
 
-    private func serve(_ api: RemoteAPI) async throws -> (HTTPServer, Int) {
+    private func serve(_ f: Fixture) async throws -> (HTTPServer, Int) {
+        let api = f.api
         for _ in 0..<20 {
             // Below macOS's ephemeral range (49152–65535), where outgoing connections bind.
             let port = Int.random(in: 40_000..<49_000)
-            let server = HTTPServer(port: UInt16(port)) { request in await api.handle(request) }
+            let server = HTTPServer(port: UInt16(port), admit: RemoteAPI.admission(tokens: f.store.tokens)) { request in await api.handle(request) }
             let result = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
                 let resumed = Resumed()
                 do {
