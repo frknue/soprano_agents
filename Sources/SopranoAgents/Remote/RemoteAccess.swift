@@ -163,7 +163,8 @@ final class RemoteAccess {
         startTask = Task { [weak self] in
             await released?.value
             guard !Task.isCancelled, let self, self.settings.enabled, self.settings.port == port else { return }
-            let server = HTTPServer(port: UInt16(clamping: port)) { request in await api.handle(request) }
+            let admit = RemoteAPI.admission(tokens: self.store.tokens)
+            let server = HTTPServer(port: UInt16(clamping: port), admit: admit) { request in await api.handle(request) }
             self.server = server
             do {
                 try server.start { [weak self] result in

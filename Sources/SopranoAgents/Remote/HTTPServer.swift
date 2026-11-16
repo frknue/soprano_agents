@@ -69,10 +69,17 @@ struct HTTPResponse: Sendable {
         HTTPResponse(status: 200, headers: [("Content-Type", contentType), ("Cache-Control", cache)], body: data)
     }
 
+    /// Sent with every response and event stream.
+    static let securityHeaders: [(String, String)] = [
+        ("X-Content-Type-Options", "nosniff"),
+        ("Referrer-Policy", "no-referrer"),
+        ("X-Frame-Options", "DENY"),
+    ]
+
     /// The bytes on the wire: status line, headers, `Content-Length`, `Connection: close`, body.
     var serialized: Data {
         var head = "HTTP/1.1 \(status) \(Self.reason(status))\r\n"
-        for (name, value) in headers { head += "\(name): \(value)\r\n" }
+        for (name, value) in headers + Self.securityHeaders { head += "\(name): \(value)\r\n" }
         head += "Content-Length: \(body.count)\r\nConnection: close\r\n\r\n"
         return Data(head.utf8) + body
     }
@@ -142,7 +149,8 @@ final class EventStream: @unchecked Sendable {
     }
 
     fileprivate func start() {
-        let head = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream; charset=utf-8\r\nCache-Control: no-cache, no-transform\r\nX-Accel-Buffering: no\r\nConnection: close\r\n\r\n"
+        let extra = HTTPResponse.securityHeaders.map { "\($0.0): \($0.1)\r\n" }.joined()
+        let head = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream; charset=utf-8\r\nCache-Control: no-cache, no-transform\r\nX-Accel-Buffering: no\r\n\(extra)Connection: close\r\n\r\n"
         write(Data(head.utf8) + Data(": stream\n\n".utf8))
         watchForClose()
     }
@@ -197,21 +205,52 @@ final class EventStream: @unchecked Sendable {
 }
 
 /// A minimal HTTP/1.1 server on `127.0.0.1:<port>` (Network.framework). One request per
-/// connection; the handler runs on the main actor. Bodies over `maxBodyBytes` get 413.
+/// connection; the handler runs on the main actor. `admit` decides from the head whether the body
+/// is read at all; connections are capped and silent ones dropped.
 final class HTTPServer: @unchecked Sendable {
     typealias Handler = @MainActor @Sendable (HTTPRequest) async -> HTTPReply
 
+    /// Whether a request may send a body, decided from its method, path and headers (on the
+    /// server's queue, before the body is read): its largest body, or the response refusing it.
+    enum AdmissionResult: Sendable {
+        case allow(maxBody: Int)
+        case reject(HTTPResponse)
+    }
+
+    typealias Admission = @Sendable (_ method: String, _ path: String, _ headers: [String: String]) -> AdmissionResult
+
+    static let admitAll: Admission = { _, _, _ in .allow(maxBody: maxBodyBytes) }
+
     /// Large enough for photos and files the phone attaches (`POST /api/attachments`).
     static let maxBodyBytes = 25 << 20
+    /// Bodies up to this size must arrive within `Limits.requestDeadline`.
+    static let smallBodyBytes = 1 << 20
     private static let maxHeadBytes = 64 << 10
+
+    /// Connection and timing limits (tests shorten them).
+    struct Limits: Sendable {
+        /// Open connections at once (event streams included); more are dropped.
+        var maxConnections = 64
+        /// Seconds a connection may stay silent before its request is complete.
+        var idleTimeout: TimeInterval = 20
+        /// Seconds from connecting until the whole request is in, however steadily bytes arrive;
+        /// only an admitted upload larger than `smallBodyBytes` is exempt.
+        var requestDeadline: TimeInterval = 15
+    }
 
     let port: UInt16
     private let handler: Handler
+    private let admit: Admission
+    private let limits: Limits
     private let queue = DispatchQueue(label: "soprano-agents.remote.http")
     private var listener: NWListener?
+    private let lock = NSLock()
+    private var openConnections = 0
 
-    init(port: UInt16, handler: @escaping Handler) {
+    init(port: UInt16, admit: @escaping Admission = HTTPServer.admitAll, limits: Limits = Limits(), handler: @escaping Handler) {
         self.port = port
+        self.admit = admit
+        self.limits = limits
         self.handler = handler
     }
 
@@ -251,65 +290,118 @@ final class HTTPServer: @unchecked Sendable {
     }
 
     private func accept(_ connection: NWConnection) {
+        let admitted = lock.withLock { () -> Bool in
+            guard openConnections < limits.maxConnections else { return false }
+            openConnections += 1
+            return true
+        }
+        guard admitted else {
+            connection.cancel()
+            return
+        }
+        // Every path ends in `cancel()` (errors included), so `.cancelled` comes once.
+        connection.stateUpdateHandler = { [weak self] state in
+            if case .cancelled = state { self?.lock.withLock { self?.openConnections -= 1 } }
+        }
         connection.start(queue: queue)
-        receive(on: connection, into: RequestBuffer())
+        let buffer = RequestBuffer()
+        armTimeout(connection, buffer)
+        // A deadline that bytes don't push back: trickling a request can't hold a slot.
+        let deadline = DispatchWorkItem { connection.cancel() }
+        buffer.deadline = deadline
+        queue.asyncAfter(deadline: .now() + limits.requestDeadline, execute: deadline)
+        receive(on: connection, into: buffer)
     }
 
     /// The bytes of one request so far; a reference, so large uploads are appended in place.
     private final class RequestBuffer: @unchecked Sendable {
         var data = Data()
+        var timeout: DispatchWorkItem?
+        var deadline: DispatchWorkItem?
+
+        func cancelTimers() {
+            timeout?.cancel()
+            deadline?.cancel()
+        }
+    }
+
+    /// Drops a connection that sends nothing for `idleTimeout` before its request is complete.
+    private func armTimeout(_ connection: NWConnection, _ buffer: RequestBuffer) {
+        buffer.timeout?.cancel()
+        let item = DispatchWorkItem { connection.cancel() }
+        buffer.timeout = item
+        queue.asyncAfter(deadline: .now() + limits.idleTimeout, execute: item)
     }
 
     private func receive(on connection: NWConnection, into buffer: RequestBuffer) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 256 << 10) { [weak self] data, _, isComplete, error in
             guard let self else { return }
-            if let data { buffer.data.append(data) }
-            switch Self.parse(buffer.data) {
-            case .incomplete:
+            if let data {
+                buffer.data.append(data)
+                armTimeout(connection, buffer)
+            }
+            switch Self.parse(buffer.data, admit: admit) {
+            case let .incomplete(bodyLimit):
+                // Only an admitted large upload (a paired device's) may outlast the deadline; it
+                // still ends when it goes silent.
+                if let bodyLimit, bodyLimit > Self.smallBodyBytes { buffer.deadline?.cancel() }
                 if isComplete || error != nil {
+                    buffer.cancelTimers()
                     connection.cancel()
                 } else {
                     self.receive(on: connection, into: buffer)
                 }
             case let .failed(response):
+                buffer.cancelTimers()
                 self.finish(connection, with: response)
             case let .request(request):
+                buffer.cancelTimers()
                 self.dispatch(request, on: connection)
             }
         }
     }
 
     enum ParseResult {
-        case incomplete
+        /// More bytes needed; `bodyLimit` is the admitted body size once the head is in.
+        case incomplete(bodyLimit: Int?)
         case failed(HTTPResponse)
         case request(HTTPRequest)
     }
 
     /// Parses a buffered request: head, then the body (`Content-Length` bytes, or a chunked one).
-    static func parse(_ buffer: Data) -> ParseResult {
+    static func parse(_ buffer: Data, admit: Admission = HTTPServer.admitAll) -> ParseResult {
         guard let end = buffer.range(of: Data("\r\n\r\n".utf8)) else {
-            return buffer.count > maxHeadBytes ? .failed(.error(413, "Request head too large.")) : .incomplete
+            return buffer.count > maxHeadBytes ? .failed(.error(413, "Request head too large.")) : .incomplete(bodyLimit: nil)
         }
         guard let head = String(data: buffer[buffer.startIndex..<end.lowerBound], encoding: .utf8),
               let (method, target, headers) = HTTPRequest.parseHead(head) else {
             return .failed(.error(400, "Malformed request."))
         }
+        let (path, query) = HTTPRequest.splitTarget(target)
+        // Decided from the head alone, so a refused request never gets its body read.
+        let limit: Int
+        switch admit(method, path, headers) {
+        case let .allow(maxBody): limit = min(maxBody, maxBodyBytes)
+        case let .reject(response): return .failed(response)
+        }
         let rest = buffer[end.upperBound...]
         let body: Data
         if headers["transfer-encoding"]?.lowercased().contains("chunked") == true {
-            switch dechunk(rest) {
-            case .incomplete: return .incomplete
+            // The encoded body (sizes, extensions, trailers) is bounded too, not only the bytes it
+            // decodes to: a client can't keep the buffer growing with framing that never ends.
+            guard rest.count <= limit * 2 + maxFramingBytes else { return .failed(.error(413, "Request body too large.")) }
+            switch dechunk(rest, limit: limit) {
+            case .incomplete: return .incomplete(bodyLimit: limit)
             case let .failed(response): return .failed(response)
             case let .body(data): body = data
             }
         } else {
             let length = Int(headers["content-length"] ?? "0") ?? -1
             guard length >= 0 else { return .failed(.error(400, "Bad Content-Length.")) }
-            guard length <= maxBodyBytes else { return .failed(.error(413, "Request body too large.")) }
-            guard rest.count >= length else { return .incomplete }
+            guard length <= limit else { return .failed(.error(413, "Request body too large.")) }
+            guard rest.count >= length else { return .incomplete(bodyLimit: limit) }
             body = Data(rest.prefix(length))
         }
-        let (path, query) = HTTPRequest.splitTarget(target)
         return .request(HTTPRequest(method: method, path: path, query: query, headers: headers, body: body))
     }
 
@@ -319,23 +411,34 @@ final class HTTPServer: @unchecked Sendable {
         case body(Data)
     }
 
+    /// Room for chunked framing beyond twice the body limit, and the longest chunk-size line.
+    static let maxFramingBytes = 16 << 10
+    private static let maxChunkLineBytes = 1 << 10
+
     /// Decodes `<hex size>\r\n<bytes>\r\n … 0\r\n\r\n` (extensions and trailers ignored).
-    private static func dechunk(_ data: Data) -> Dechunked {
+    private static func dechunk(_ data: Data, limit: Int) -> Dechunked {
         var body = Data()
         var index = data.startIndex
         let crlf = Data("\r\n".utf8)
         while true {
-            guard let lineEnd = data.range(of: crlf, in: index..<data.endIndex) else { return .incomplete }
+            guard let lineEnd = data.range(of: crlf, in: index..<data.endIndex) else {
+                return data.endIndex - index > maxChunkLineBytes ? .failed(.error(400, "Bad chunk size.")) : .incomplete
+            }
+            guard lineEnd.lowerBound - index <= maxChunkLineBytes else { return .failed(.error(400, "Bad chunk size.")) }
             let line = String(decoding: data[index..<lineEnd.lowerBound], as: UTF8.self)
             guard let size = Int(line.split(separator: ";").first.map(String.init)?.trimmingCharacters(in: .whitespaces) ?? "", radix: 16), size >= 0 else {
                 return .failed(.error(400, "Bad chunk size."))
             }
             index = lineEnd.upperBound
             if size == 0 {
-                return data.range(of: Data("\r\n\r\n".utf8), in: (index - 2)..<data.endIndex) == nil ? .incomplete : .body(body)
+                // Trailers end with an empty line; they may not run past the framing allowance.
+                guard data.range(of: Data("\r\n\r\n".utf8), in: (index - 2)..<data.endIndex) != nil else {
+                    return data.endIndex - index > maxFramingBytes ? .failed(.error(400, "Bad chunk trailer.")) : .incomplete
+                }
+                return .body(body)
             }
             // Compared without adding: a size near Int.max must not overflow.
-            guard size <= maxBodyBytes - body.count else { return .failed(.error(413, "Request body too large.")) }
+            guard size <= limit - body.count else { return .failed(.error(413, "Request body too large.")) }
             guard data.endIndex - index >= size + 2 else { return .incomplete }
             body.append(data[index..<(index + size)])
             index += size + 2

@@ -32,7 +32,8 @@ extension SettingsController {
                 description: """
                 Scan the code with the phone's camera to open the web app. To keep it on the Home Screen, \
                 choose Share › Add to Home Screen in Safari, open it from there and paste the pairing link \
-                when it asks (Copy pairing link, then paste on the phone).
+                when it asks (Copy pairing link, then paste on the phone). Each link pairs one device; a \
+                new one appears here after each pairing.
                 """,
                 control: form.group([
                     Self.qrCodeView(for: link.absoluteString),

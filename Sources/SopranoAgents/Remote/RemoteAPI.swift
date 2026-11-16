@@ -54,6 +54,35 @@ final class RemoteAPI {
         AppResources.bundle.url(forResource: "Web", withExtension: nil)
     }
 
+    /// What the server reads of a request before any handler runs (`HTTPServer.Admission`):
+    /// static files and pairing get small bodies; every other `/api/` route needs a paired
+    /// device's token first, so an unpaired client can't make the app read large bodies.
+    nonisolated static func admission(tokens: TokenIndex) -> HTTPServer.Admission {
+        { method, path, headers in
+            guard path == "/api" || path.hasPrefix("/api/") else { return .allow(maxBody: 0) }
+            if path == "/api/pair" { return .allow(maxBody: 4 << 10) }
+            guard let value = headers["authorization"], value.lowercased().hasPrefix("bearer "),
+                  tokens.contains(token: value.dropFirst("bearer ".count).trimmingCharacters(in: .whitespaces)) else {
+                return .reject(.error(401, "This device is not paired. Open the pairing link from Soprano Agents › Settings › Phone."))
+            }
+            return .allow(maxBody: method == "POST" && path == "/api/attachments" ? HTTPServer.maxBodyBytes : HTTPServer.smallBodyBytes)
+        }
+    }
+
+    /// Push services the app delivers to (Apple, Google, Mozilla, Microsoft); a subscription
+    /// elsewhere would make the Mac send requests to an address a device picked.
+    static func isPushService(_ endpoint: String) -> Bool {
+        guard let url = URL(string: endpoint), url.scheme == "https", let host = url.host?.lowercased(),
+              url.port == nil || url.port == 443 else { return false }
+        let services = ["push.apple.com", "fcm.googleapis.com", "push.services.mozilla.com", "notify.windows.com"]
+        return services.contains { host == $0 || host.hasSuffix("." + $0) }
+    }
+
+    /// The web app's pages: scripts only from this origin, no plugins, frames or foreign posts.
+    static let contentSecurityPolicy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+        + "img-src 'self' blob: data:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; "
+        + "frame-ancestors 'none'; form-action 'none'; worker-src 'self'; manifest-src 'self'"
+
     /// Ends every event stream (remote access turned off).
     func closeStreams() {
         for stream in streams { stream.close() }
@@ -154,7 +183,13 @@ final class RemoteAPI {
             guard let attachment = attachment(p[0]), let data = try? Data(contentsOf: URL(fileURLWithPath: attachment.path)) else {
                 throw RouteError.notFound
             }
-            return .response(.file(data, contentType: attachment.mimeType, cache: "private, max-age=86400"))
+            // Images keep their type for thumbnails (the sandbox policy keeps an SVG's scripts
+            // inert); anything else downloads as bytes and never runs as a page of this origin.
+            let type = attachment.kind == .image ? attachment.mimeType : "application/octet-stream"
+            var response = HTTPResponse.file(data, contentType: type, cache: "private, max-age=86400")
+            response.headers.append(("Content-Security-Policy", "default-src 'none'; sandbox"))
+            response.headers.append(("Content-Disposition", "attachment"))
+            return .response(response)
         }
         if let p = route.match("POST", "threads/:id/interrupt") {
             await engine.interrupt(try thread(p[0]).id)
@@ -243,7 +278,7 @@ final class RemoteAPI {
         }
         if route.match("POST", "push/subscriptions") != nil {
             let body = try decode(SubscriptionBody.self, request)
-            guard body.endpoint.hasPrefix("https://") else { throw RouteError.badRequest("The push endpoint must be https.") }
+            guard Self.isPushService(body.endpoint) else { throw RouteError.badRequest("The push endpoint is not a known push service.") }
             store.addSubscription(PushSubscription(endpoint: body.endpoint, p256dh: body.keys.p256dh, auth: body.keys.auth, createdAt: Date(), deviceID: device.id))
             return .response(.noContent)
         }
@@ -632,6 +667,7 @@ final class RemoteAPI {
         let cache = relative.hasPrefix("vendor/") ? "public, max-age=604800" : "no-cache"
         var response = HTTPResponse.file(data, contentType: Self.contentType(url.pathExtension), cache: cache)
         if relative == "sw.js" { response.headers.append(("Service-Worker-Allowed", "/")) }
+        if url.pathExtension.lowercased() == "html" { response.headers.append(("Content-Security-Policy", Self.contentSecurityPolicy)) }
         return response
     }
 

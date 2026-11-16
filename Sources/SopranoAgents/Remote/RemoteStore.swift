@@ -11,9 +11,26 @@ struct PairedDevice: Codable, Sendable, Hashable, Identifiable {
     var lastSeenAt: Date?
 }
 
+/// The paired devices' token hashes, readable off the main actor: the server checks a request's
+/// token from its head before reading the body.
+final class TokenIndex: @unchecked Sendable {
+    private let lock = NSLock()
+    private var hashes: [String] = []
+
+    func update(_ hashes: [String]) {
+        lock.withLock { self.hashes = hashes }
+    }
+
+    func contains(token: String) -> Bool {
+        let hash = RemoteStore.hash(token)
+        let hashes = lock.withLock { self.hashes }
+        return hashes.reduce(false) { $0 || RemoteStore.constantTimeEqual($1, hash) }
+    }
+}
+
 /// Remote access state in `<app data>/remote.json`: the pairing code, paired devices, the VAPID
-/// keys and push subscriptions. Main-actor only; every change is written at once (owner-only
-/// file permissions).
+/// keys and push subscriptions. Main-actor only (except `tokens`); every change is written at
+/// once (owner-only file permissions).
 @MainActor
 final class RemoteStore {
     private struct Contents: Codable {
@@ -24,6 +41,7 @@ final class RemoteStore {
     }
 
     let url: URL
+    nonisolated let tokens = TokenIndex()
     private var contents: Contents
     private let now: () -> Date
     private let observers = ObserverList<Void>()
@@ -33,6 +51,7 @@ final class RemoteStore {
         self.now = now
         if let data = try? Data(contentsOf: url), let contents = try? RemoteJSON.decoder.decode(Contents.self, from: data) {
             self.contents = contents
+            tokens.update(contents.devices.map(\.tokenHash))
         } else {
             contents = Contents(pairingCode: Self.randomToken(), vapid: .generate())
             save()
@@ -54,9 +73,11 @@ final class RemoteStore {
         save()
     }
 
-    /// Redeems the pairing code for a new device token; nil when the code is wrong.
+    /// Redeems the pairing code for a new device token; nil when the code is wrong. A code works
+    /// once: pairing replaces it, so a link seen or copied earlier can't pair another device.
     func pair(code: String, name: String) -> String? {
         guard Self.constantTimeEqual(code, contents.pairingCode) else { return nil }
+        contents.pairingCode = Self.randomToken()
         let token = Self.randomToken()
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         contents.devices.append(PairedDevice(
@@ -112,28 +133,46 @@ final class RemoteStore {
 
     // MARK: Helpers
 
+    /// Writes a temporary file created owner-only, then renames it over `remote.json`: the VAPID
+    /// private key and token hashes are never readable by others, not even mid-write.
     private func save() {
         do {
             let directory = url.deletingLastPathComponent()
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            try RemoteJSON.encoder.encode(contents).write(to: url, options: [.atomic])
-            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+            let data = try RemoteJSON.encoder.encode(contents)
+            let temporary = directory.appendingPathComponent(".remote-\(UUID().uuidString).json")
+            // `open` with mode 0600 creates it owner-only; nothing is written before that.
+            let descriptor = open(temporary.path, O_WRONLY | O_CREAT | O_EXCL, 0o600)
+            guard descriptor >= 0 else { throw CocoaError(.fileWriteUnknown) }
+            let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+            do {
+                try handle.write(contentsOf: data)
+                try handle.close()
+            } catch {
+                try? FileManager.default.removeItem(at: temporary)
+                throw error
+            }
+            guard rename(temporary.path, url.path) == 0 else {
+                try? FileManager.default.removeItem(at: temporary)
+                throw CocoaError(.fileWriteUnknown)
+            }
         } catch {
             NSLog("Soprano Agents: could not save %@: %@", url.path, error.localizedDescription)
         }
+        tokens.update(contents.devices.map(\.tokenHash))
         observers.notify(())
     }
 
     /// 32 random bytes, base64url.
-    static func randomToken() -> String {
+    nonisolated static func randomToken() -> String {
         Data(SymmetricKey(size: .bits256).withUnsafeBytes { Array($0) }).base64URLEncodedString()
     }
 
-    static func hash(_ token: String) -> String {
+    nonisolated static func hash(_ token: String) -> String {
         SHA256.hash(data: Data(token.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 
-    static func constantTimeEqual(_ lhs: String, _ rhs: String) -> Bool {
+    nonisolated static func constantTimeEqual(_ lhs: String, _ rhs: String) -> Bool {
         let a = Array(lhs.utf8)
         let b = Array(rhs.utf8)
         guard a.count == b.count else { return false }

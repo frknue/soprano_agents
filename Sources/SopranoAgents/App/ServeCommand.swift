@@ -75,10 +75,11 @@ enum ServeCommand {
         let built = try DemoFixtures.build(options.fixture)
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("soprano-agents-serve-\(UUID().uuidString)", isDirectory: true)
         let store = RemoteStore(url: directory.appendingPathComponent("remote.json"))
+        let token = store.pair(code: store.pairingCode, name: "serve harness") ?? ""
+        // Pairing used up the first code; this one pairs a browser.
         let code = store.pairingCode
-        let token = store.pair(code: code, name: "serve harness") ?? ""
         let api = RemoteAPI(engine: built.engine, store: store, terminals: RemoteTerminals(engine: built.engine))
-        let server = HTTPServer(port: UInt16(options.port)) { request in await api.handle(request) }
+        let server = HTTPServer(port: UInt16(options.port), admit: RemoteAPI.admission(tokens: store.tokens)) { request in await api.handle(request) }
         try server.start { result in
             switch result {
             case .success:

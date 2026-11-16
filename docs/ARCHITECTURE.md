@@ -703,7 +703,18 @@ The app serves its own web app so threads can be continued from a phone. It is o
 
 - `RemoteServer` (Network.framework `NWListener`) listens on `127.0.0.1:<remote.port>` (default
   47261), plain HTTP/1.1, one request per connection (`Connection: close`), except the
-  server-sent event streams, which stay open. It never binds another interface.
+  server-sent event streams, which stay open. It never binds another interface. Before reading a
+  body it asks `RemoteAPI.admission` from the head: static files get none, `/api/pair` 4 KB,
+  every other `/api/` route needs a paired token (checked off the main actor through
+  `RemoteStore.tokens`; 401 otherwise) and gets 1 MB, uploads 25 MB (a chunked body's encoding
+  may be at most twice that plus 16 KB of framing, a size line 1 KB). At most 64 connections are
+  open; one silent for 20 s before its request is complete is dropped, and every request must be
+  complete within 15 s of connecting however steadily it trickles (only a paired device's upload
+  over 1 MB is exempt and ends only when silent). Every response carries
+  `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` and `X-Frame-Options: DENY`;
+  HTML pages a Content Security Policy (scripts, connections and workers from the app's origin
+  only, no frames, plugins or form posts); attachments a sandbox policy, and anything but images
+  is served as `application/octet-stream`.
 - `TailscaleServe` publishes it with `tailscale serve --bg --https=<remote.httpsPort>
   http://127.0.0.1:<port>` (default 443) and reads the device's MagicDNS name from
   `tailscale status --json` for the URL (`https://<name>.<tailnet>.ts.net/`). It never replaces
@@ -715,8 +726,8 @@ The app serves its own web app so threads can be continued from a phone. It is o
   (and an unpublish until a publish still in flight finished). Tailscale Serve terminates TLS, so the origin is
   HTTPS (needed for the service worker, Web Push and WebCrypto).
 - Pairing: Settings → Phone shows the URL, a QR code and "Copy pairing link"
-  (`https://<host>/#pair=<code>`); the code (32 random bytes, base64url) stays valid until "New
-  pairing link". The web app redeems it (`POST /api/pair`) for a device token (32 random bytes),
+  (`https://<host>/#pair=<code>`); the code (32 random bytes, base64url) works once: pairing or
+  "New pairing link" replaces it. The web app redeems it (`POST /api/pair`) for a device token (32 random bytes),
   kept in `localStorage` and sent as `Authorization: Bearer <token>`; the server stores only its
   SHA-256 with the device name and dates in `<app data>/remote.json` (Settings lists devices,
   Revoke drops one with its push subscriptions, which belong to the device that made them, and
@@ -734,7 +745,7 @@ The app serves its own web app so threads can be continued from a phone. It is o
 - Push (`remote.push`): when a thread turns Done, Failed, Approval or Input (the same alerts as
   `ThreadNotifier`) while the Mac's user is away (the app is not active, or no input for 2
   minutes), every subscribed device gets `{title, body, threadID}`. Subscriptions answered 404
-  or 410 are dropped.
+  or 410 are dropped; only Apple, Google, Mozilla and Microsoft push service hosts are accepted.
 
 The web app (`Remote/Web/`, copied into the resource bundle) is plain HTML, CSS and ES modules
 without a build step; `vendor/` holds xterm.js and its fit addon. It is a PWA

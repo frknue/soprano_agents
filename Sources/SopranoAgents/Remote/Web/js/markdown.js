@@ -219,7 +219,9 @@ function link(url, label) {
 export function inline(raw) {
   const slots = [];
   const keep = (html) => `\u0000${slots.push(html) - 1}\u0000`;
-  let text = String(raw).replace(/(`+)([^`]|[^`][\s\S]*?[^`])\1(?!`)/g, (_, ticks, code) => {
+  // NUL delimits the placeholders below; one in the source could make a placeholder name itself
+  // and expand forever, so the source never carries any.
+  let text = String(raw).replace(/\u0000/g, '\uFFFD').replace(/(`+)([^`]|[^`][\s\S]*?[^`])\1(?!`)/g, (_, ticks, code) => {
     const trimmed = /^ .* $/.test(code) ? code.slice(1, -1) : code;
     return keep(`<code>${escapeHTML(trimmed)}</code>`);
   });
