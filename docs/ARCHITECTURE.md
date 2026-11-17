@@ -138,8 +138,10 @@ Engine behavior:
   (`SOPRANO_AGENTS_DATA_DIR` overrides). Attachments in `<data>/attachments/<uuid>/<name>`
   (passed to sessions as an additional directory); scratch threads work in `<data>/scratch/<thread>`.
 - Workspace files (`EngineEnvironment.files`, default `LiveWorkspaceFileService`): in a git repo
-  `ls-files -z --cached --others --exclude-standard` (ignored files stay out, deleted ones are
-  dropped); elsewhere a walk skipping `.git`, `node_modules`, `.build`, `DerivedData` (≤ 20 000
+  `ls-files -z --cached --others --exclude-standard` (searchable files; deleted ones are dropped)
+  plus `ls-files -z --others --ignored --exclude-standard --directory` for the explorer's dimmed
+  ignored entries (whole ignored folders as one "path/" entry, read one level at a time by
+  `listDirectory` when opened, ≤ 5 000 entries); elsewhere a walk skipping `.git`, `node_modules`, `.build`, `DerivedData` (≤ 20 000
   files). Reads resolve symlinks and refuse anything outside the working directory; text up to
   2 MiB, images by extension up to 20 MiB, NUL or invalid UTF-8 = binary.
 - Context: every `tokenUsage` event sets the latest turn's usage and `AgentThread.contextUsage`

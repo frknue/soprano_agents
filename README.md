@@ -62,7 +62,7 @@ The installer never restarts a running Soprano Agents; the update applies on the
 5. Open a turn's diff from its changed-files card, or the whole thread's with `⌘D`. "Edit from
    here" rewinds the thread (and optionally the files) to before that turn.
 6. The right panel (`⌘L`) keeps tabs per thread, as in T3 Code: Diff, Files (`⇧⌘F`: browse and
-   search the thread's workspace; ignored files stay out) with a read-only, syntax-colored tab per
+   search the thread's workspace; git-ignored files show dimmed and stay out of search) with a read-only, syntax-colored tab per
    opened file — Markdown files open in Soprano's reader (links to other files open their tab,
    `⇧⌘V` or the eye button shows the source) —, and terminals (`⇧⌘J`) next to the bottom
    drawer's. `+` adds a surface; with every tab closed, "Open a surface" offers Terminal (`T`),

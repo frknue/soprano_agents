@@ -9,6 +9,17 @@ extension AgentEngine {
         try await environment.files.listFiles(root: requireRoot(workspace))
     }
 
+    /// What git ignores in the workspace: ignored files, and ignored folders as one entry
+    /// ending in "/".
+    public func workspaceIgnoredEntries(_ workspace: WorkspaceRef) async throws -> [String] {
+        try await environment.files.listIgnored(root: requireRoot(workspace))
+    }
+
+    /// One folder of the workspace ("" = its root), for expanding an ignored folder.
+    public func workspaceDirectory(_ workspace: WorkspaceRef, path: String) async throws -> [WorkspaceDirectoryEntry] {
+        try await environment.files.listDirectory(root: requireRoot(workspace), relativePath: path)
+    }
+
     /// Reads one file of the workspace; rejects paths escaping it (`..`, absolute, symlink out
     /// of root) with `EngineError.message`.
     public func readWorkspaceFile(_ workspace: WorkspaceRef, path: String) async throws -> WorkspaceFileContent {

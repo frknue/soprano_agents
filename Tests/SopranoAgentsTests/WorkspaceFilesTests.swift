@@ -28,6 +28,27 @@ struct WorkspaceFilesTests {
         #expect(files == [".gitignore", "Sources/App.swift", "Sources/New File ü.swift"])
     }
 
+    @Test func ignoredFilesAndWholeIgnoredFoldersAreListedSeparately() async throws {
+        let sandbox = try GitSandbox()
+        defer { sandbox.remove() }
+        let repo = try await sandbox.repository()
+        try await repo.commit("init", [".gitignore": "build/\n*.log\n.env\n", "Sources/App.swift": "app"])
+        try repo.write("build/debug/output.o", "ignored")
+        try repo.write("build/release/App", "ignored")
+        try repo.write("Sources/trace.log", "ignored")
+        try repo.write(".env", "SECRET=1")
+        let service = LiveWorkspaceFileService(runner: sandbox.runner)
+
+        let ignored = try await service.listIgnored(root: repo.path)
+        let build = try await service.listDirectory(root: repo.path, relativePath: "build")
+
+        #expect(ignored == [".env", "Sources/trace.log", "build/"])
+        #expect(build == [WorkspaceDirectoryEntry(name: "debug", isDirectory: true), WorkspaceDirectoryEntry(name: "release", isDirectory: true)])
+        await #expect(throws: EngineError.self) {
+            _ = try await service.listDirectory(root: repo.path, relativePath: "../")
+        }
+    }
+
     @Test func aTrackedFileDeletedFromDiskIsNotListed() async throws {
         let sandbox = try GitSandbox()
         defer { sandbox.remove() }

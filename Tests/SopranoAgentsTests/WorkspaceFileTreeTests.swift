@@ -1,6 +1,7 @@
 import AppKit
 import Testing
 @testable import SopranoAgents
+@testable import SopranoAgentsCore
 
 struct WorkspaceFileTreeTests {
     private let paths = [
@@ -58,5 +59,31 @@ struct WorkspaceFileTreeTests {
         let tree = WorkspaceFileTree(paths: [])
         #expect(tree.isEmpty)
         #expect(tree.roots.isEmpty)
+    }
+
+    @Test func ignoredEntriesJoinTheTreeDimmedButStayOutOfSearch() {
+        let tree = WorkspaceFileTree(paths: ["Sources/App.swift", "README.md"], ignored: [".build/", ".env", "Sources/trace.log"])
+
+        #expect(tree.roots.map(\.name) == [".build", "Sources", ".env", "README.md"])
+        let build = tree.roots[0]
+        #expect(build.isDirectory && build.isIgnored && build.isLazy && build.children.isEmpty)
+        #expect(!tree.roots[1].isIgnored)
+        #expect(tree.roots[1].children.map { "\($0.name):\($0.isIgnored)" } == ["App.swift:false", "trace.log:true"])
+        #expect(tree.roots[2].isIgnored && !tree.roots[2].isDirectory)
+        #expect(tree.lazyDirectoryPaths == [".build"])
+        #expect(tree.search("trace").isEmpty)
+        #expect(tree.search("app") == ["Sources/App.swift"])
+    }
+
+    @Test func anIgnoredFoldersEntriesAreIgnoredAndItsFoldersOpenLazily() {
+        let children = WorkspaceFileNode.ignoredChildren(of: ".build", entries: [
+            WorkspaceDirectoryEntry(name: "release.yaml", isDirectory: false),
+            WorkspaceDirectoryEntry(name: "debug", isDirectory: true),
+        ])
+
+        #expect(children.map(\.path) == [".build/debug", ".build/release.yaml"])
+        let allIgnored = children.allSatisfy { $0.isIgnored }
+        #expect(allIgnored)
+        #expect(children[0].isLazy && !children[1].isLazy)
     }
 }

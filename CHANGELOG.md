@@ -83,7 +83,7 @@ All notable changes to Soprano Agents are documented here. The format follows
   Maximize panel.
 - The right panel holds tabs per thread, as in T3 Code: next to Diff, a Files tab (`⇧⌘F`, or
   Search Files from the palette) browses and searches the thread's workspace (git-ignored files
-  stay out) and opens files in read-only tabs with line numbers and syntax colors (images too),
+  and folders show dimmed, like in VS Code, and stay out of search) and opens files in read-only tabs with line numbers and syntax colors (images too),
   with Copy contents, Open in Editor and Reveal in Finder; Terminal tabs (`⇧⌘J`) run shells in
   the thread's working directory beside the drawer's. `+` adds a surface, `⌘W` closes the focused
   tab, `⌘F` in the panel opens a file tab's find bar or the Files search (Find in Thread

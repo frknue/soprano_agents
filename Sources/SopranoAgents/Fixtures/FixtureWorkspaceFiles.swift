@@ -36,6 +36,19 @@ struct FixtureWorkspaceFiles: WorkspaceFileService {
         Self.paths
     }
 
+    /// What the demo repository's `.gitignore` leaves out, shown dimmed.
+    func listIgnored(root: String) async throws -> [String] {
+        [".build/", ".env", "Sources/App/Secrets.xcconfig"]
+    }
+
+    func listDirectory(root: String, relativePath: String) async throws -> [WorkspaceDirectoryEntry] {
+        switch relativePath {
+        case ".build": [WorkspaceDirectoryEntry(name: "debug", isDirectory: true), WorkspaceDirectoryEntry(name: "workspace-state.json", isDirectory: false)]
+        case ".build/debug": [WorkspaceDirectoryEntry(name: "App", isDirectory: false)]
+        default: []
+        }
+    }
+
     func readFile(root: String, relativePath: String) async throws -> WorkspaceFileContent {
         guard Self.paths.contains(relativePath) else {
             throw EngineError.message("\(relativePath) doesn't exist.")

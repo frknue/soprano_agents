@@ -36,6 +36,38 @@ public struct LiveWorkspaceFileService: WorkspaceFileService {
         return Self.walk(root: root)
     }
 
+    public func listIgnored(root: String) async throws -> [String] {
+        guard let runner else { return [] }
+        let result = try await runner.run(
+            ["ls-files", "-z", "--others", "--ignored", "--exclude-standard", "--directory"],
+            in: URL(fileURLWithPath: root, isDirectory: true), isRead: true, acceptedExitCodes: [0, 128]
+        )
+        guard result.exitCode == 0 else { return [] }
+        return Self.nulSeparated(result.stdout).sorted()
+    }
+
+    public func listDirectory(root: String, relativePath: String) async throws -> [WorkspaceDirectoryEntry] {
+        let folder: URL
+        if relativePath.isEmpty {
+            folder = URL(fileURLWithPath: root, isDirectory: true)
+        } else if let url = WorkspaceFilePath.resolve(root: root, relativePath: relativePath) {
+            folder = url
+        } else {
+            throw EngineError.message("\(relativePath) is outside the workspace.")
+        }
+        let names = try FileManager.default.contentsOfDirectory(atPath: folder.path)
+        var entries: [WorkspaceDirectoryEntry] = []
+        for name in names.sorted() {
+            var info = stat()
+            guard lstat(folder.path + "/" + name, &info) == 0 else { continue }
+            let type = info.st_mode & S_IFMT
+            guard type == S_IFDIR || type == S_IFREG || type == S_IFLNK else { continue }
+            entries.append(WorkspaceDirectoryEntry(name: name, isDirectory: type == S_IFDIR))
+            if entries.count >= WorkspaceFileLimits.maximumDirectoryEntries { break }
+        }
+        return entries
+    }
+
     /// Unique entries of `ls-files -z` output (unmerged entries repeat once per stage).
     static func nulSeparated(_ data: Data) -> Set<String> {
         Set(data.split(separator: 0).map { String(decoding: $0, as: UTF8.self) })

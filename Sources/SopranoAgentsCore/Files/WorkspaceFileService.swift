@@ -20,9 +20,34 @@ public protocol WorkspaceFileService: Sendable {
     /// under root, skipping `.git`, `node_modules`, `.build`, `DerivedData`, capped at
     /// `WorkspaceFileLimits.maximumWalkedFiles`.
     func listFiles(root: String) async throws -> [String]
+    /// What git ignores under `root`, for the explorer to show dimmed: ignored files, and
+    /// ignored folders as one entry ending in "/" (`git ls-files -z --others --ignored
+    /// --exclude-standard --directory`), sorted. Empty outside git.
+    func listIgnored(root: String) async throws -> [String]
+    /// One folder's entries (files and folders, sorted), for expanding an ignored folder;
+    /// `relativePath` "" is the root. Paths escaping `root` throw `EngineError.message`.
+    func listDirectory(root: String, relativePath: String) async throws -> [WorkspaceDirectoryEntry]
     /// Reads one file under `root`; paths escaping it (`..`, absolute, a symlink out of root)
     /// throw `EngineError.message`.
     func readFile(root: String, relativePath: String) async throws -> WorkspaceFileContent
+}
+
+extension WorkspaceFileService {
+    /// Services without git (fixtures, tests) ignore nothing.
+    public func listIgnored(root: String) async throws -> [String] { [] }
+    public func listDirectory(root: String, relativePath: String) async throws -> [WorkspaceDirectoryEntry] { [] }
+}
+
+/// One entry of a folder listing.
+public struct WorkspaceDirectoryEntry: Sendable, Hashable {
+    public var name: String
+    /// A real folder (a symlink to one counts as a file and is never entered).
+    public var isDirectory: Bool
+
+    public init(name: String, isDirectory: Bool) {
+        self.name = name
+        self.isDirectory = isDirectory
+    }
 }
 
 public enum WorkspaceFileLimits {
@@ -32,6 +57,8 @@ public enum WorkspaceFileLimits {
     public static let binaryProbeBytes = 8 * 1024
     /// Cap of the non-git directory walk.
     public static let maximumWalkedFiles = 20_000
+    /// Most entries one folder listing returns.
+    public static let maximumDirectoryEntries = 5_000
     /// Directories the non-git walk never enters.
     public static let skippedDirectories: Set<String> = [".git", "node_modules", ".build", "DerivedData"]
     /// Lowercased extensions read as `.image`.

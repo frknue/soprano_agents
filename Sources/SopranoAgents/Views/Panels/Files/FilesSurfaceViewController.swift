@@ -35,6 +35,11 @@ final class FilesSurfaceViewController: NSViewController, NSOutlineViewDataSourc
     private var runningThreads: Set<String> = []
     /// Expanded folder paths per workspace.
     private var expanded: [String: Set<String>] = [:]
+    /// Entries of opened ignored folders per workspace (by folder path), read when they open;
+    /// dropped with the listing they belong to.
+    private var lazyChildren: [String: [String: [WorkspaceFileNode]]] = [:]
+    /// Ignored folders being read ("<workspace key>\0<path>").
+    private var lazyLoads: Set<String> = []
 
     /// The rows on screen: the tree's roots, or the search matches (flat).
     private var rows: [WorkspaceFileNode] = []
@@ -50,7 +55,8 @@ final class FilesSurfaceViewController: NSViewController, NSOutlineViewDataSourc
     private let searchField = FilesSearchField()
     private let refreshButton = GhostIconButton(symbol: "arrow.clockwise", size: 28, symbolSize: 12, toolTip: "Refresh files")
     private let scrollView = NSScrollView()
-    private let outlineView = FilesOutlineView()
+    /// Internal for tests.
+    let outlineView = FilesOutlineView()
     private let messageLabel = NSTextField.label(size: Typography.smallSize)
     private let contextMenu = NSMenu()
 
@@ -219,12 +225,14 @@ final class FilesSurfaceViewController: NSViewController, NSOutlineViewDataSourc
             versions[key] = nil
             pendingLoads[key] = nil
             expanded[key] = nil
+            lazyChildren[key] = nil
             staleThreads.remove(key)
         }
         runningThreads.formIntersection(keys)
     }
 
-    private func refresh() {
+    /// Relists the shown workspace (Refresh; internal for tests).
+    func refresh() {
         guard let workspace = state.workspace, engine.workingDirectory(of: workspace) != nil else { return }
         load(workspace)
     }
@@ -247,7 +255,9 @@ final class FilesSurfaceViewController: NSViewController, NSOutlineViewDataSourc
             let listing: Listing
             do {
                 let paths = try await engine.workspaceFiles(workspace)
-                let tree = await Task.detached(priority: .userInitiated) { WorkspaceFileTree(paths: paths) }.value
+                // Dimmed extras: a failure here only leaves them out.
+                let ignored = (try? await engine.workspaceIgnoredEntries(workspace)) ?? []
+                let tree = await Task.detached(priority: .userInitiated) { WorkspaceFileTree(paths: paths, ignored: ignored) }.value
                 listing = .loaded(tree)
             } catch {
                 listing = .failed((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
@@ -263,8 +273,14 @@ final class FilesSurfaceViewController: NSViewController, NSOutlineViewDataSourc
         listings[key] = listing
         if case let .loaded(tree) = listing {
             versions[key, default: 0] += 1
+            lazyChildren[key] = nil
             if var folders = expanded[key] {
-                folders.formIntersection(tree.directoryPaths)
+                // Folders inside ignored folders are only known once those open again.
+                let known = tree.directoryPaths
+                let lazyRoots = tree.lazyDirectoryPaths
+                folders = folders.filter { path in
+                    known.contains(path) || lazyRoots.contains { path.hasPrefix($0 + "/") }
+                }
                 expanded[key] = folders
             }
         }
@@ -348,11 +364,44 @@ final class FilesSurfaceViewController: NSViewController, NSOutlineViewDataSourc
         defer { isRestoringExpansion = false }
         func walk(_ nodes: [WorkspaceFileNode]) {
             for node in nodes where node.isDirectory && folders.contains(node.path) {
+                // An ignored folder reads its entries now and restores its own subfolders then.
                 outlineView.expandItem(node)
-                walk(node.children)
+                walk(children(of: node, key: key) ?? [])
             }
         }
         walk(nodes)
+    }
+
+    /// A folder's rows: its children, or for an ignored folder the entries read so far (nil
+    /// while they load, which starts the read).
+    private func children(of node: WorkspaceFileNode, key: String) -> [WorkspaceFileNode]? {
+        guard node.isLazy else { return node.children }
+        if let loaded = lazyChildren[key]?[node.path] { return loaded }
+        loadLazyChildren(of: node, key: key)
+        return nil
+    }
+
+    private func loadLazyChildren(of node: WorkspaceFileNode, key: String) {
+        // Per listing: a refresh builds new nodes, whose folders read again even while a read
+        // for the old listing is still running (its result is dropped).
+        let version = versions[key] ?? 0
+        let loadKey = "\(key)\u{0}\(version)\u{0}\(node.path)"
+        guard let workspace = state.workspace, workspace.key == key, !lazyLoads.contains(loadKey) else { return }
+        lazyLoads.insert(loadKey)
+        let engine = engine
+        Task { [weak self] in
+            let entries = (try? await engine.workspaceDirectory(workspace, path: node.path)) ?? []
+            guard let self else { return }
+            self.lazyLoads.remove(loadKey)
+            // A new listing replaced the tree (and this node) meanwhile.
+            guard (self.versions[key] ?? 0) == version else { return }
+            self.lazyChildren[key, default: [:]][node.path] = WorkspaceFileNode.ignoredChildren(of: node.path, entries: entries)
+            guard self.state.workspace?.key == key, !self.isSearching, self.outlineView.row(forItem: node) >= 0 else { return }
+            self.outlineView.reloadItem(node, reloadChildren: true)
+            if self.outlineView.isItemExpanded(node) {
+                self.restoreExpansion(self.lazyChildren[key]?[node.path] ?? [], key: key)
+            }
+        }
     }
 
     // MARK: - Actions
@@ -448,12 +497,14 @@ final class FilesSurfaceViewController: NSViewController, NSOutlineViewDataSourc
 
     func outlineView(_ outlineView: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int {
         guard let node = item as? WorkspaceFileNode else { return rows.count }
-        return node.children.count
+        guard let key = state.workspace?.key else { return node.children.count }
+        return children(of: node, key: key)?.count ?? 0
     }
 
     func outlineView(_ outlineView: NSOutlineView, child index: Int, ofItem item: Any?) -> Any {
         guard let node = item as? WorkspaceFileNode else { return rows[index] }
-        return node.children[index]
+        guard node.isLazy, let key = state.workspace?.key, let loaded = lazyChildren[key]?[node.path] else { return node.children[index] }
+        return loaded[index]
     }
 
     func outlineView(_ outlineView: NSOutlineView, isItemExpandable item: Any) -> Bool {
@@ -670,7 +721,7 @@ final class FilesCell: NSTableCellView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
-    /// A tree row at `depth`.
+    /// A tree row at `depth`. Git-ignored entries are dimmed (name and icon muted).
     func configure(_ node: WorkspaceFileNode, depth: Int, isExpanded: Bool, palette: Palette) {
         leading?.constant = 8 + CGFloat(max(0, depth)) * 12
         chevronWidth?.constant = 12
@@ -678,12 +729,13 @@ final class FilesCell: NSTableCellView {
         chevron.image = NSImage.symbol(isExpanded ? Icon.chevronDown : Icon.chevronRight, size: 9, weight: .semibold)
         chevron.contentTintColor = palette.mutedForeground
         icon.image = NSImage.symbol(node.isDirectory ? "folder" : WorkspaceFileActions.symbol(forFileNamed: node.name), size: 11)
-        icon.contentTintColor = palette.mutedForeground
+        icon.contentTintColor = node.isIgnored ? palette.mutedForeground.withAlphaComponent(0.6) : palette.mutedForeground
         label.attributedStringValue = NSAttributedString(string: node.name, attributes: [
-            .font: Typography.ui(Typography.smallSize), .foregroundColor: palette.foreground,
+            .font: Typography.ui(Typography.smallSize),
+            .foregroundColor: node.isIgnored ? palette.mutedForeground : palette.foreground,
         ])
-        toolTip = node.path
-        setAccessibilityLabel(node.path)
+        toolTip = node.isIgnored ? "\(node.path) (ignored by git)" : node.path
+        setAccessibilityLabel(node.isIgnored ? "\(node.path), ignored" : node.path)
     }
 
     /// A flat search match: name, then its folder muted.
