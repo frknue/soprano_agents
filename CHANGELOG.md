@@ -164,6 +164,8 @@ All notable changes to Soprano Agents are documented here. The format follows
 
 ### Fixed
 
+- A question whose options are long sentences no longer widens the window beyond the screen:
+  options wrap in the composer.
 - omp forms (the `ask` tool's radio buttons, checkboxes and text fields) answer correctly:
   a checkbox group is one checklist with its checked boxes ticked, submitted at once instead
   of one toggle per round with a "Done selecting" row; the checked radio is preselected, "Other"

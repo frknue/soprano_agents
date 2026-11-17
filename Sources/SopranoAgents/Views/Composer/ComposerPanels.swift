@@ -385,7 +385,9 @@ final class ComposerQuestionPanel: PaletteView {
 
 private final class QuestionOptionRow: InteractiveView {
     private let radio = ComposerRadioMark()
-    private let label = NSTextField.label("", size: Typography.bodySize, weight: .medium)
+    // Wraps: a long option (an `ask` form's choices are often sentences) must never widen the
+    // composer, and with it the window.
+    private let label = ComposerWrappingLabel.make(size: Typography.bodySize, weight: .medium)
     private let detail = ComposerWrappingLabel.make(size: Typography.tinySize)
     private let checked: Bool
     private let multiple: Bool
