@@ -146,7 +146,7 @@ right-panel tab) has focus.
 | Toggle Markdown Preview (a Markdown file tab's reader or source) | `⇧⌘V` | right panel |
 | New Terminal | `⌘N` | terminal (drawer or right-panel tab) |
 | Close Terminal | `⌘W` | terminal (drawer or right-panel tab) |
-| Open in Editor | `⌘O` | everywhere |
+| Open in Editor | `⌘O`, `⌃A` → `V` | everywhere |
 | Open in Soprano Git | `⌃A` → `G` | everywhere |
 | Show Usage | `⌘U` | everywhere |
 | Statistics | `⇧⌘U` | everywhere |

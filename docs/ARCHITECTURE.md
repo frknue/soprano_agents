@@ -865,7 +865,7 @@ binding beats a global one. Shortcuts that would need ⌥ use ⌃⌘ instead.
 | `rightPanel.toggleMarkdownPreview` | Toggle Markdown Preview (reader ↔ source of a Markdown file tab) | rightPanel | `cmd+shift+v` | Panels |
 | `terminal.new` | New Terminal (drawer, or a panel tab when one has focus) | terminal | `cmd+n` | Panels |
 | `terminal.close` | Close Terminal (drawer, or the focused panel tab) | terminal | `cmd+w` | Panels |
-| `editor.openFavorite` | Open in Editor | global | `cmd+o` | Panels |
+| `editor.openFavorite` | Open in Editor | global | `cmd+o`, `prefix+v` | Panels |
 | `git.openInSopranoGit` | Open in Soprano Git (the workspace's repository root, as in Soprano) | global | `prefix+g` | Panels |
 | `git.commit` / `git.push` / `git.createPR` | Commit / Push / Create PR | — | — | Panels |
 | `diff.toggleLayout` / `diff.toggleFileTree` | Toggle Split Diff View / Diff File Tree | — | — | Panels |

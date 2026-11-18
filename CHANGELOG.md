@@ -139,6 +139,7 @@ All notable changes to Soprano Agents are documented here. The format follows
   click to toggle the thread details (⇧⌘B).
 - Open in Soprano Git (⌃A then G, as in Soprano; also File menu and palette): opens the thread's
   or new thread's repository in Soprano Git, or selects its tab there if already open.
+- ⌃A then V opens the working folder in your editor (`editor.app`), next to ⌘O.
 - Side questions (omp's `/btw`): send `/btw <question>` or press ⇧⌘I to ask about a thread
   without steering it, even while the agent works. The answer streams into a panel above the
   composer and never joins the conversation; a topic takes follow-ups, Stop or Esc cancels a

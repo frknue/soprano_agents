@@ -59,7 +59,7 @@ struct KeymapTests {
             ("rightPanel.find", [.rightPanel], ["cmd+f"]),
             ("terminal.new", [.terminal], ["cmd+n"]),
             ("terminal.close", [.terminal], ["cmd+w"]),
-            ("editor.openFavorite", [], ["cmd+o"]),
+            ("editor.openFavorite", [], ["cmd+o", "prefix+v"]),
             ("git.openInSopranoGit", [], ["prefix+g"]),
             ("git.commit", [], []),
             ("git.push", [], []),

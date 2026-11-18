@@ -188,7 +188,7 @@ enum PanelCommands {
                 title: "Open in Editor",
                 description: "Open the working folder in your editor",
                 category: .project,
-                defaultKeys: ["cmd+o"],
+                defaultKeys: ["cmd+o", "prefix+v"],
                 icon: "arrow.up.forward.app",
                 isEnabled: { $0.workspace?.chat.details.workingDirectory != nil }
             ) { context in
