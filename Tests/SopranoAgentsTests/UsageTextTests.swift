@@ -29,15 +29,15 @@ struct UsageTextTests {
         #expect(UsageText.tooltip(AccountsSnapshot(), now: now) == nil)
     }
 
-    @Test func theCLIListsTheVendoredControllerStillLoadsNeverReachTheHeadlines() {
+    @Test func cliAccountListsContributeToHeadlinesWhenOmpHasNoUsage() {
         var snapshot = AccountFixtures.empty(now: now)
         let usage = AccountUsage(windows: [UsageWindow(label: "5h", usedFraction: 0.95, resetsAt: nil)], fetchedAt: now)
         snapshot.lists[.codexCLI] = AccountList(
             id: .codexCLI,
             systemDefault: AccountRow(id: "system-default", identity: AccountIdentity(email: "ada@example.com"), usage: usage)
         )
-        #expect(UsageText.headlines(snapshot).isEmpty)
-        #expect(UsageText.severity(snapshot) == .normal)
+        #expect(headlineFigures(snapshot) == ["Codex 95%"])
+        #expect(UsageText.severity(snapshot) == .critical)
     }
 
     @Test func severityTurnsWarningAtSeventyAndCriticalAtNinetyPercent() {

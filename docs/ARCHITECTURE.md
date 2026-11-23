@@ -253,10 +253,38 @@ Engine behavior:
 
 ### Providers (Core/Providers)
 `ProviderDriver` creates `ProviderSession`s, probes the CLI (`probe()` → version, health,
-models), runs one-shot `generateJSON`, and lists commands without a conversation
-(`commands(directory:)`). `OmpDriver`, `OpencodeDriver` and `AntigravityDriver` implement it, one
-per `ProviderKind` (`.omp`, `.opencode`, `.antigravity`; declaration order is display order); the
-seam keeps the engine testable against a fake driver.
+models), declares `ProviderCapabilities` (steering, rollback, Plan mode, native subagents, side
+questions, MCP injection, system-prompt append, host tools), runs one-shot `generateJSON`, and
+lists commands without a conversation (`commands(directory:)`). `OmpDriver`, `CodexDriver`,
+`AntigravityDriver` and `OpencodeDriver` implement it, one per `ProviderKind` (`.omp`, `.codex`,
+`.antigravity`, `.opencode`; declaration order is display order); the seam keeps the engine
+testable against a fake driver. `SessionConfig.mcpServers` carries OS-agnostic `MCPServerSpec`
+definitions for session-level injection, and `TurnInput.interactionMode` (`.standard` / `.plan`)
+drives Plan mode for providers that support it.
+
+**Codex** — OpenAI's Codex CLI as an app-server (`codex app-server --stdio`), one process per
+thread, speaking JSON-RPC 2.0 over `AcpClient` (path from `EngineSettings.codexPath` or PATH;
+`AccountLaunchBridge.codexAdjustments()` injects `CODEX_HOME` for the chosen Codex CLI account).
+Handshake: `initialize` (with `capabilities.experimentalApi:true`) → `initialized` notification →
+`thread/resume` (for `providerThreadID`, falling back to `thread/start`) or `thread/start` (`cwd`,
+`model`, `approvalPolicy`, `sandbox`, optional `developerInstructions` from `systemPromptFile`),
+then `skills/list` for `/skill:<name>` menu entries. `SessionConfig.mcpServers` are passed as `-c
+mcp_servers.<name>…` TOML overrides. Turns: `turn/start` with `input` (`text`, native `skill`
+blocks for leading `/skill:<name>`, `localImage` blocks for image attachments), `approvalPolicy`,
+`sandboxPolicy`, `model`, `effort`, `serviceTier:"fast"` (Fast Mode) and `collaborationMode`
+(`"plan"` / `"default"` for Plan mode). Steer = `turn/steer {threadId, expectedTurnId, input}`;
+Interrupt = `turn/interrupt` (5 s fallback grace); Compaction = `thread/compact/start`; Rollback =
+`thread/rollback {threadId, numTurns}`. Approvals (`item/commandExecution/requestApproval`,
+`item/fileChange/requestApproval`) and structured questions (`item/tool/requestUserInput`) arrive
+as JSON-RPC server requests; `.fullAccess` auto-approves all, `.autoAcceptEdits` auto-approves file
+changes. Events (`CodexEventMapper`): `item/agentMessage/delta`, `item/plan/delta`,
+`item/reasoning/*`, `item/commandExecution/outputDelta`, `item/started|completed` (`agentMessage`,
+`plan`, `reasoning`, `commandExecution`, `fileChange` with unified diffs, `mcpToolCall`,
+`dynamicToolCall`, `collabAgentToolCall`, `webSearch`, `imageView`, `contextCompaction`),
+`turn/plan/updated`, `thread/tokenUsage/updated`, `thread/compacted`, `turn/completed`. Probe:
+`codex --version` plus a throwaway app-server for `account/read` and paginated `model/list`.
+`generateJSON` runs an ephemeral read-only thread with `outputSchema`. Traces:
+`Fixtures/codex-tool-turn.jsonl`.
 
 **omp** (oh-my-pi) — `omp --mode rpc-ui --cwd <cwd> --approval-mode <mode>
 [--model <provider/id>] [--thinking <level>] [--resume <session file>]`, one process per thread
@@ -909,6 +937,7 @@ binding beats a global one. Shortcuts that would need ⌥ use ⌃⌘ instead.
 | `modelPicker.toggle` | Model Picker | not terminal | `cmd+shift+m` | Composer |
 | `composer.effort` | Reasoning Effort | not terminal | `cmd+shift+e` | Composer |
 | `composer.mode` | Permissions | not terminal | `cmd+shift+a` | Composer |
+| `composer.planMode` | Toggle Plan Mode (Build ↔ Plan, shown for providers with `supportsPlanMode`) | not terminal | `cmd+shift+t` | Composer |
 | `composer.workspace` | Workspace | not terminal | `cmd+shift+x` | Composer |
 | `composer.branch` | Branch | not terminal | `cmd+shift+g` | Composer |
 | `composer.sendAlternate` | Steer or Queue (opposite) | composer | `cmd+enter` | Composer |

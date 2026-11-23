@@ -68,9 +68,11 @@ public actor AcpClient {
         }
     }
 
-    /// Sends a notification (no answer: `session/cancel`).
-    public func notify(_ method: String, _ params: JSONValue = [:]) throws {
-        try transport.send(JSONValue.object(["jsonrpc": "2.0", "method": .string(method), "params": params]).jsonString())
+    /// Sends a notification (no answer: `session/cancel`, Codex `initialized`).
+    public func notify(_ method: String, _ params: JSONValue? = nil) throws {
+        var payload: [String: JSONValue] = ["jsonrpc": "2.0", "method": .string(method)]
+        if let params { payload["params"] = params }
+        try transport.send(JSONValue.object(payload).jsonString())
     }
 
     /// Answers an agent request with `result`.

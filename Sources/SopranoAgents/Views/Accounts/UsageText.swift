@@ -86,9 +86,12 @@ enum UsageText {
         return (blocks + ["Click for details"]).joined(separator: "\n\n")
     }
 
-    /// A list's caption in the usage card: "omp · automatic" until a login is preferred, then "omp".
+    /// A list's caption in the usage card: "omp · automatic" / "Codex CLI · system default" until a
+    /// login is explicitly picked.
     static func caption(for list: AccountList) -> String {
-        list.selectedAccountId == nil ? "\(list.id.tool.displayName) · automatic" : list.id.tool.displayName
+        guard list.selectedAccountId == nil else { return list.id.tool.displayName }
+        let suffix = list.id.tool == .omp ? "automatic" : "system default"
+        return "\(list.id.tool.displayName) · \(suffix)"
     }
 
     /// "Updated 4m ago": recomputed on every render, which each refresh triggers.
@@ -122,9 +125,25 @@ enum UsageText {
         return parts
     }
 
-    /// Settings → Accounts: what each omp list is for.
-    static let listNote = "omp uses every account and fails over when one runs out. New omp threads try the preferred account first."
+    /// Settings → Accounts: what each list is for.
+    static func listNote(for listID: AccountListID) -> String {
+        switch listID.tool {
+        case .omp:
+            "omp uses every account and fails over when one runs out. New omp threads try the preferred account first."
+        case .codexCLI:
+            "Codex isolates each login in its own CODEX_HOME. New Codex threads start with the selected account."
+        case .claudeCode:
+            "Claude Code keeps one active login on this Mac. Selecting an account switches the active login."
+        }
+    }
 
     /// The confirmation text for removing an account.
-    static let removalExplanation = "omp signs this account out on this Mac."
+    static func removalExplanation(for listID: AccountListID) -> String {
+        switch listID.tool {
+        case .omp:
+            "omp signs this account out on this Mac."
+        case .codexCLI, .claudeCode:
+            "Removes this saved \(listID.tool.displayName) login from Soprano Agents on this Mac."
+        }
+    }
 }

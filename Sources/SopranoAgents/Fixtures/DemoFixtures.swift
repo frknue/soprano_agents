@@ -44,8 +44,9 @@ enum DemoFixtures {
         )
         let engine = AgentEngine(environment: environment)
         engine.setProviderStatus(ProviderStatus(kind: .omp, health: .ready, version: "18.14.0", models: ompModels))
-        engine.setProviderStatus(ProviderStatus(kind: .opencode, health: .ready, version: "2.2.5", models: opencodeModels))
+        engine.setProviderStatus(ProviderStatus(kind: .codex, health: .ready, version: "0.144.6 · ChatGPT Pro", models: codexModels))
         engine.setProviderStatus(ProviderStatus(kind: .antigravity, health: .ready, version: "1.5.14 · Google AI Pro", models: antigravityModels))
+        engine.setProviderStatus(ProviderStatus(kind: .opencode, health: .ready, version: "2.2.5", models: opencodeModels))
         // The `/` menu's list for omp in the demo thread's worktree and in the app project (drafts).
         for directory in [demoWorktree, "/Users/demo/code/app"] {
             engine.rememberCommands(ompCommands, provider: .omp, workingDirectory: directory)
@@ -194,6 +195,18 @@ enum DemoFixtures {
         ]
         return [ProviderModel(slug: ModelSelection.configuredDefaultModel, name: "Claude Opus 5.5 · configured", isDefault: true, options: [efforts])]
             + entries.map { ProviderModel(slug: $0.0, name: $0.1, options: [efforts]) }
+    }()
+
+    /// A slice of Codex's catalog as `model/list` reports it, with reasoning efforts and Fast Mode.
+    static let codexModels: [ProviderModel] = {
+        let efforts = ProviderCatalog.effortOption(["low", "medium", "high", "xhigh"], default: "high")
+        let fast = ModelOption(id: ModelOptionID.fastMode, label: "Fast Mode", kind: .boolean, defaultValue: "false")
+        return [
+            ProviderModel(slug: ModelSelection.configuredDefaultModel, name: "GPT-5.6-Sol · default", isDefault: true, options: [efforts, fast]),
+            ProviderModel(slug: "gpt-5.6-sol", name: "GPT-5.6-Sol", options: [efforts, fast]),
+            ProviderModel(slug: "gpt-5.4-codex", name: "GPT-5.4-Codex", options: [efforts]),
+            ProviderModel(slug: "gpt-5.4-mini", name: "GPT-5.4-Mini", options: [efforts]),
+        ]
     }()
 
     /// A slice of OpenCode's catalog as `GET /api/model` reports it (`providerID/modelID`,

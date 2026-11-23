@@ -68,6 +68,18 @@ enum ComposerCommands {
                 revealedComposer(context)?.togglePermissions()
             },
             AppCommand(
+                id: "composer.planMode",
+                title: "Toggle Plan Mode",
+                description: "Switch between Build and Plan mode for providers that support it",
+                category: .composer,
+                scopes: notTerminal,
+                defaultKeys: ["cmd+shift+t"],
+                icon: InteractionMode.plan.symbolName,
+                isEnabled: { composer($0)?.supportsPlanMode ?? false }
+            ) { context in
+                revealedComposer(context)?.togglePlanMode()
+            },
+            AppCommand(
                 id: "composer.workspace",
                 title: "Workspace",
                 description: "Choose where the thread works on the repository",

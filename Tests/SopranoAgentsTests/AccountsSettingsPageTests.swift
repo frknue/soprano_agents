@@ -52,7 +52,7 @@ struct AccountsSettingsPageTests {
         return result
     }
 
-    @Test func thePageListsOmpsAccountListsWithTheirLoginsAndActions() throws {
+    @Test func thePageListsAllShownAccountListsWithTheirLoginsAndActions() throws {
         let fixture = try makeFixture(AccountFixtures.demo())
         defer { try? FileManager.default.removeItem(at: fixture.directory) }
 
@@ -60,17 +60,15 @@ struct AccountsSettingsPageTests {
         let shown = texts(sections)
 
         #expect(sections.count == 1 + AccountListID.shown.count)
-        for title in ["Claude · omp", "Codex · omp"] {
+        for title in ["Claude · omp", "Claude · Claude Code", "Codex · omp", "Codex · Codex CLI"] {
             #expect(shown.contains(title), "\(title)")
         }
-        #expect(!shown.contains { $0.contains("Claude Code") || $0.contains("Codex CLI") })
         #expect(shown.contains("Updated 4m ago"))
         #expect(shown.filter { $0 == "Automatic" }.count == 2)
         #expect(shown.filter { $0 == "ada@example.com" }.count == 2)
         #expect(shown.contains("grace@example.com"))
-        #expect(!shown.contains("System default"))
         #expect(shown.filter { $0 == "Prefer" }.count == 3)
-        #expect(shown.filter { $0 == "Add Account" }.count == 2)
+        #expect(shown.filter { $0 == "Add Account" }.count == AccountListID.shown.count)
         #expect(shown.contains { $0.contains("Soprano") && !$0.contains("Soprano Agents") } == false)
     }
 

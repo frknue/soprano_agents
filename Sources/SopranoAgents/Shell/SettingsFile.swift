@@ -95,7 +95,7 @@ enum SettingsFile {
           "theme": "soprano",
 
           "agents": {
-            // The agent new threads start with: "omp", "opencode" or "antigravity".
+            // The agent new threads start with: "omp", "codex", "antigravity" or "opencode".
             "defaultProvider": "omp",
             // Model id of that agent ("provider/id"); omit for the agent's own configured model.
             // "defaultModel": "anthropic/claude-sonnet-5-5",
@@ -106,12 +106,13 @@ enum SettingsFile {
           "providers": {
             // Executables; omit to find them on PATH (agy also in omp's downloads).
             // "ompPath": "~/.bun/bin/omp",
-            // "opencodePath": "~/.opencode/bin/opencode",
-            // "antigravityPath": "~/.local/bin/agy"
+            // "codexPath": "/opt/homebrew/bin/codex",
+            // "antigravityPath": "~/.local/bin/agy",
+            // "opencodePath": "~/.opencode/bin/opencode"
           },
 
           "textGeneration": {
-            // Thread titles, commit messages and branch names: "omp", "opencode" or "antigravity".
+            // Thread titles, commit messages and branch names: "omp", "codex", "antigravity" or "opencode".
             "provider": "omp",
             // Model id of that agent; omit for the agent's own configured model.
             // "model": "anthropic/claude-haiku-5-5",

@@ -19,8 +19,8 @@ protocol AccountsSource: AnyObject {
 }
 
 extension AccountListID {
-    /// The lists the accounts UI shows, in display order: omp's Claude logins, then its Codex logins.
-    static let shown: [AccountListID] = [.ompClaude, .ompCodex]
+    /// The lists the accounts UI shows, in display order: omp and CLI logins for Claude and Codex.
+    static let shown: [AccountListID] = [.ompClaude, .claudeCode, .ompCodex, .codexCLI]
 }
 
 extension AccountsController: AccountsSource {}

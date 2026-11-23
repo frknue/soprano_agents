@@ -26,6 +26,14 @@ All notable changes to Soprano Agents are documented here. The format follows
   titles, branch names and commit messages; `providers.opencodePath` if `opencode` is not on
   `PATH`. Settings → Providers shows each agent's status. Statistics, Accounts and word
   completion stay omp's.
+- Codex threads via `codex app-server --stdio`: the model picker (⇧⌘M) gets a Codex column with
+  Codex's live model catalog, reasoning efforts and Fast Mode; inline command and file-change
+  approvals, structured user-input questions, steering, `/compact`, Edit from here rollback, Codex
+  skills in the `/` menu (`/skill:<name>`), Plan mode toggle (`⇧⌘T` or the Build/Plan chip in the
+  composer), and Codex text generation (`textGeneration.provider`: `codex`). Set
+  `providers.codexPath` if `codex` is not on `PATH`.
+- Multi-account management in **Settings › Accounts** now also includes **Codex CLI** (`CODEX_HOME`
+  isolation per account) and **Claude Code** alongside omp's Claude and Codex accounts.
 - Antigravity threads for Google AI Pro and Ultra plans, the way T3 Code runs them: Soprano Agents
   drives Google's Antigravity CLI (`agy acp`) with Antigravity's own agent and tools. The model
   picker (⇧⌘M) gets an Antigravity column with the plan's models (Gemini, plus Claude and GPT

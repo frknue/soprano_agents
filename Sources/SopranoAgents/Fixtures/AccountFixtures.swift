@@ -57,10 +57,12 @@ enum AccountFixtures {
                 AccountRow(id: grace.key, identity: grace, organizationName: "Analytical Engines", plan: "team", usage: graceClaude),
             ]
         )
+        snapshot.lists[.claudeCode] = AccountList(id: .claudeCode)
         snapshot.lists[.ompCodex] = AccountList(
             id: .ompCodex,
             accounts: [AccountRow(id: ada.key, identity: ada, plan: "plus", usage: adaCodex)]
         )
+        snapshot.lists[.codexCLI] = AccountList(id: .codexCLI)
         snapshot.lastRefresh = now.addingTimeInterval(-4 * 60)
         return snapshot
     }

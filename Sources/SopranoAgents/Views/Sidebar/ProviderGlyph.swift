@@ -1,8 +1,8 @@
 import AppKit
 import SopranoAgentsCore
 
-/// Provider marks: omp's "π", OpenCode's framed block and Antigravity's arch. Template images
-/// (tint with `contentTintColor`).
+/// Provider marks: omp's "π", Codex's hexagon knot, Antigravity's arch and OpenCode's framed
+/// block. Template images (tint with `contentTintColor`).
 @MainActor
 enum ProviderGlyph {
     /// The mark at `size` points.
@@ -11,8 +11,9 @@ enum ProviderGlyph {
         if let cached = cache[key] { return cached }
         let image = switch kind {
         case .omp: renderPi(size: size)
-        case .opencode: renderOpencode(size: size)
+        case .codex: renderCodex(size: size)
         case .antigravity: renderArch(size: size)
+        case .opencode: renderOpencode(size: size)
         }
         image.isTemplate = true
         image.accessibilityDescription = kind.displayName
@@ -21,6 +22,33 @@ enum ProviderGlyph {
     }
 
     private static var cache: [String: NSImage] = [:]
+
+    /// Codex's mark: a clean six-sided knot (outer hexagon with a centered dot/ring), crisp at
+    /// 14–20 pt.
+    private static func renderCodex(size: CGFloat) -> NSImage {
+        NSImage(size: NSSize(width: size, height: size), flipped: false) { rect in
+            let stroke = max(1.4, size * 0.13)
+            let radius = (min(rect.width, rect.height) - stroke) * 0.44
+            let center = NSPoint(x: rect.midX, y: rect.midY)
+            let hex = NSBezierPath()
+            for index in 0..<6 {
+                let angle = CGFloat(index) * (.pi / 3) - (.pi / 6)
+                let point = NSPoint(x: center.x + cos(angle) * radius, y: center.y + sin(angle) * radius)
+                if index == 0 { hex.move(to: point) } else { hex.line(to: point) }
+            }
+            hex.close()
+            hex.lineWidth = stroke
+            hex.lineJoinStyle = .round
+            NSColor.black.setStroke()
+            hex.stroke()
+
+            let inner = radius * 0.36
+            let dot = NSBezierPath(ovalIn: NSRect(x: center.x - inner, y: center.y - inner, width: inner * 2, height: inner * 2))
+            NSColor.black.setFill()
+            dot.fill()
+            return true
+        }
+    }
 
     /// omp (oh-my-pi) has no vector mark: a bold "π" set in the system font, template-rendered.
     private static func renderPi(size: CGFloat) -> NSImage {

@@ -85,7 +85,8 @@ extension AgentEngine {
                     text: TeamTools.providerText(turn.userMessage, teammate: current.teammate),
                     attachments: turn.userMessage.attachments,
                     modelSelection: turn.modelSelection,
-                    runtimeMode: current.runtimeMode
+                    runtimeMode: current.runtimeMode,
+                    interactionMode: current.interactionMode
                 )
                 providerTurnID = try await session.startTurn(input)
             }
@@ -236,7 +237,8 @@ extension AgentEngine {
                 text: TeamTools.providerText(message, teammate: thread.teammate),
                 attachments: message.attachments,
                 modelSelection: thread.modelSelection,
-                runtimeMode: thread.runtimeMode
+                runtimeMode: thread.runtimeMode,
+                interactionMode: thread.interactionMode
             ))
         } catch ProviderError.noActiveTurn {
             enqueue(threadID, message: message, selection: thread.modelSelection)

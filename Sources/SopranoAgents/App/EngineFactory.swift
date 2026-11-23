@@ -19,12 +19,14 @@ enum AppPaths {
 final class ExecutablePaths: @unchecked Sendable {
     private let lock = NSLock()
     private var ompPath: String?
+    private var codexPath: String?
     private var opencodePath: String?
     private var antigravityPath: String?
 
     func update(_ settings: EngineSettings) {
         lock.withLock {
             ompPath = settings.ompPath
+            codexPath = settings.codexPath
             opencodePath = settings.opencodePath
             antigravityPath = settings.antigravityPath
         }
@@ -33,6 +35,11 @@ final class ExecutablePaths: @unchecked Sendable {
     /// `providers.ompPath`, or nil to search PATH.
     var omp: String? {
         lock.withLock { ompPath }
+    }
+
+    /// `providers.codexPath`, or nil to search PATH.
+    var codex: String? {
+        lock.withLock { codexPath }
     }
 
     /// `providers.opencodePath`, or nil to search PATH.
@@ -46,17 +53,22 @@ final class ExecutablePaths: @unchecked Sendable {
     }
 }
 
-/// The accounts each new omp process starts with, read from the vendored `AccountLaunchState`
-/// that `AccountsController` publishes into: omp's `--config` overlay with the preferred accounts.
+/// The accounts each new provider process starts with, read from the vendored `AccountLaunchState`
+/// that `AccountsController` publishes into: omp's `--config` overlay and Codex's `CODEX_HOME`.
 enum AccountLaunchBridge {
     static func ompAdjustments(state: AccountLaunchState = .shared) -> ProviderLaunchAdjustments {
         let adjustments = state.adjustments(forProfile: "omp")
         return ProviderLaunchAdjustments(environment: adjustments.environment, arguments: adjustments.arguments)
     }
+
+    static func codexAdjustments(state: AccountLaunchState = .shared) -> ProviderLaunchAdjustments {
+        let adjustments = state.adjustments(forProfile: "codex")
+        return ProviderLaunchAdjustments(environment: adjustments.environment, arguments: adjustments.arguments)
+    }
 }
 
-/// Builds the engine the app runs with: JSON-file store, git CLI, the omp, OpenCode and
-/// Antigravity drivers, omp's usage statistics and omp's typing aids.
+/// Builds the engine the app runs with: JSON-file store, git CLI, the omp, Codex, Antigravity
+/// and OpenCode drivers, omp's usage statistics and omp's typing aids.
 @MainActor
 enum EngineFactory {
     /// The executable overrides the drivers read on every spawn; the app delegate keeps them current.
@@ -73,11 +85,15 @@ enum EngineFactory {
                     executablePath: { paths.omp },
                     launchAdjustments: { AccountLaunchBridge.ompAdjustments() }
                 ),
-                .opencode: OpencodeDriver(executablePath: { paths.opencode }),
+                .codex: CodexDriver(
+                    executablePath: { paths.codex },
+                    launchAdjustments: { AccountLaunchBridge.codexAdjustments() }
+                ),
                 .antigravity: AntigravityDriver(
                     executablePath: { paths.antigravity },
                     profile: AntigravityProtocol.profileDirectory(dataDirectory: dataDirectory)
                 ),
+                .opencode: OpencodeDriver(executablePath: { paths.opencode }),
             ],
             git: LiveGitService(),
             store: JSONFileThreadStore(directory: dataDirectory),

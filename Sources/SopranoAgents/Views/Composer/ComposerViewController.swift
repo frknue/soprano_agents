@@ -42,6 +42,7 @@ final class ComposerViewController: NSViewController, FocusRegionController, NST
     private let modelChip = ComposerChip()
     private let traitsChip = ComposerChip()
     private let permissionsChip = ComposerChip()
+    private let planModeChip = ComposerChip()
     private let previousButton = TextButton("Previous", variant: .outline, size: .sm)
     private let answerButton = ComposerPillButton("Submit answer")
     private let primaryButton = ComposerPrimaryButton()
@@ -67,6 +68,7 @@ final class ComposerViewController: NSViewController, FocusRegionController, NST
     struct NewThreadOptions: Equatable {
         var modelSelection: ModelSelection
         var runtimeMode: RuntimeMode
+        var interactionMode: InteractionMode = .standard
         var usesWorktree = false
         /// Base ref of the new worktree; nil = the current branch.
         var baseBranch: String?
@@ -189,7 +191,7 @@ final class ComposerViewController: NSViewController, FocusRegionController, NST
         modelChip.setPadding(leading: 6, trailing: 8)
         traitsChip.setPadding(leading: 7, trailing: 7)
         traitsChip.mutesTitle = true
-        let chips = NSStackView(views: [modelGroup, permissionsChip])
+        let chips = NSStackView(views: [modelGroup, permissionsChip, planModeChip])
         chips.orientation = .horizontal
         chips.spacing = 2
         let actions = NSStackView(views: [previousButton, answerButton, contextMeter, primaryButton])
@@ -270,6 +272,7 @@ final class ComposerViewController: NSViewController, FocusRegionController, NST
         modelChip.onClick = { [weak self] in self?.toggleModelPicker() }
         traitsChip.onClick = { [weak self] in self?.toggleTraits() }
         permissionsChip.onClick = { [weak self] in self?.togglePermissions() }
+        planModeChip.onClick = { [weak self] in self?.togglePlanMode() }
         primaryButton.onClick = { [weak self] in self?.primaryClicked() }
         previousButton.onClick = { [weak self] in self?.previousQuestion() }
         answerButton.onClick = { [weak self] in self?.advanceQuestion() }
@@ -401,6 +404,19 @@ final class ComposerViewController: NSViewController, FocusRegionController, NST
 
     private var selection: ModelSelection { currentThread?.modelSelection ?? draftOptions.modelSelection }
     private var runtimeMode: RuntimeMode { currentThread?.runtimeMode ?? draftOptions.runtimeMode }
+    private var interactionMode: InteractionMode { currentThread?.interactionMode ?? draftOptions.interactionMode }
+    var supportsPlanMode: Bool { showsThreadSettings && selection.provider.capabilities.supportsPlanMode }
+
+    func togglePlanMode() {
+        guard supportsPlanMode else { return }
+        let next: InteractionMode = interactionMode == .plan ? .standard : .plan
+        if let thread = currentThread {
+            engine.setInteractionMode(thread.id, next)
+        } else {
+            draftOptions.interactionMode = next
+            refreshChips()
+        }
+    }
 
     /// Git facts of the draft's project, once loaded and only for repositories.
     private var draftRepository: DraftGit? {
@@ -559,6 +575,14 @@ final class ComposerViewController: NSViewController, FocusRegionController, NST
         permissionsChip.configure(title: mode.title, image: NSImage.symbol(mode.symbolName, size: 13))
         permissionsChip.toolTip = "Permissions: \(mode.title). \(mode.summary)"
         permissionsChip.setAccessibilityLabel("Permissions: \(mode.title)")
+
+        let planSupported = selection.provider.capabilities.supportsPlanMode
+        let collaboration = interactionMode
+        planModeChip.isHidden = isSubagent || !planSupported
+        planModeChip.configure(title: collaboration.title, image: NSImage.symbol(collaboration.symbolName, size: 13))
+        planModeChip.isOpen = collaboration == .plan
+        planModeChip.toolTip = "\(collaboration.title) mode: \(collaboration.summary)"
+        planModeChip.setAccessibilityLabel("\(collaboration.title) mode")
     }
 
     private func refreshContextStrip() {
@@ -763,6 +787,7 @@ final class ComposerViewController: NSViewController, FocusRegionController, NST
             projectID: state.draftProjectID,
             modelSelection: options.modelSelection,
             runtimeMode: options.runtimeMode,
+            interactionMode: options.interactionMode,
             workspace: workspace
         )
         let sentFrom = target

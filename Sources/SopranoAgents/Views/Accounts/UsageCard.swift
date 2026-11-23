@@ -79,16 +79,30 @@ final class UsageCardContent: ComposerPopoverContent {
             fullWidth.append(view)
         }
 
+        var shownProvider: AccountProvider?
         for listID in AccountListID.shown {
-            guard let list = snapshot.lists[listID], !list.accounts.isEmpty else { continue }
-            if let last = contentStack.arrangedSubviews.last {
-                contentStack.setCustomSpacing(12, after: last)
-                add(AccountsRule(), after: 12)
+            guard let list = snapshot.lists[listID] else { continue }
+            let rows: [(row: AccountRow, isSelected: Bool)] = if !list.accounts.isEmpty {
+                list.accounts.map { ($0, list.selectedAccountId == $0.id) }
+            } else if let system = list.systemDefault {
+                [(system, list.selectedAccountId == nil)]
+            } else {
+                []
             }
-            add(eyebrow(listID.provider.displayName), after: 8)
+            guard !rows.isEmpty else { continue }
+            if shownProvider != listID.provider {
+                if let last = contentStack.arrangedSubviews.last {
+                    contentStack.setCustomSpacing(12, after: last)
+                    add(AccountsRule(), after: 12)
+                }
+                add(eyebrow(listID.provider.displayName), after: 8)
+                shownProvider = listID.provider
+            } else if let last = contentStack.arrangedSubviews.last {
+                contentStack.setCustomSpacing(10, after: last)
+            }
             add(ThemedLabel(UsageText.caption(for: list), size: Typography.smallSize) { $0.mutedForeground }, after: 6)
-            for account in list.accounts {
-                add(makeRow(account, isSelected: list.selectedAccountId == account.id, now: now), after: 8)
+            for entry in rows {
+                add(makeRow(entry.row, isSelected: entry.isSelected, now: now), after: 8)
             }
         }
         if fullWidth.isEmpty {

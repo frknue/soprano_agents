@@ -58,7 +58,7 @@ struct SettingsTests {
         {
           "theme": "neon",
           "agents": { "defaultProvider": "gemini", "defaultRuntimeMode": "yolo" },
-          "textGeneration": { "provider": "codex" },
+          "textGeneration": { "provider": "unknown-cli" },
           "chat": { "followUp": "later", "width": 3 },
           "worktrees": { "directory": "relative/path", "branchPrefix": "has space" },
           "notifications": { "enabled": "yes" },
@@ -71,8 +71,8 @@ struct SettingsTests {
         #expect(resolved.keybindings.prefixTimeoutMs == 300)
         #expect(resolved.keybindings.overrides.isEmpty)
         #expect(resolved.issues.count == 13)
-        #expect(resolved.issues.map(\.message).contains("agents.defaultProvider must be \"omp\", \"opencode\" or \"antigravity\"."))
-        #expect(resolved.issues.map(\.message).contains("textGeneration.provider must be \"omp\", \"opencode\" or \"antigravity\"."))
+        #expect(resolved.issues.map(\.message).contains("agents.defaultProvider must be \"omp\", \"codex\", \"antigravity\" or \"opencode\"."))
+        #expect(resolved.issues.map(\.message).contains("textGeneration.provider must be \"omp\", \"codex\", \"antigravity\" or \"opencode\"."))
         #expect(resolved.issues.allSatisfy { $0.severity == .warning })
     }
 

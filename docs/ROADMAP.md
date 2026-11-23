@@ -6,9 +6,10 @@ Deliberately not built yet, so nobody mistakes their absence for a bug. Geplante
 - Remote environments (SSH, relays, WSL), guest sharing. Phone access exists (the web app over
   Tailscale Serve, Settings › Phone); it needs the Mac on and awake, and phone terminals are their
   own shells, not the Mac's terminal tabs.
-- Agents other than omp and OpenCode (Codex, Claude Code, Cursor, upstream Pi, Grok, ACP registry
-  agents).
-- Plan mode: omp's RPC has no plan-mode switch (OpenCode's plan agent is not offered either).
+- Agents other than omp, Codex, Antigravity and OpenCode (Claude Code — next phase, Cursor,
+  upstream Pi, Grok, ACP registry agents).
+- Plan mode for providers that do not offer a native collaboration/plan mode switch (Codex supports
+  Plan mode natively via `collaborationMode`; omp and Antigravity do not expose one).
 - Statistics, Accounts and word completion for OpenCode: they read omp's own data and helpers.
 - OpenCode side-question history across app runs: OpenCode keeps none, the app keeps this run's.
 - Right-panel surfaces other than Diff, Files, file tabs and Terminal: in-app browser preview

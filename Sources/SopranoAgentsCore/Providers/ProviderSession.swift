@@ -17,6 +17,8 @@ public struct SessionConfig: Sendable, Hashable {
     /// Tools the host serves for this conversation (omp `set_host_tools`); calls arrive as
     /// `ProviderEvent.hostToolCall`. Providers without host tools ignore them.
     public var hostTools: [HostToolDefinition]
+    /// Shared MCP servers Soprano Agents injects into the session (browser, team, user MCPs).
+    public var mcpServers: [MCPServerSpec]
 
     public init(
         cwd: String,
@@ -25,7 +27,8 @@ public struct SessionConfig: Sendable, Hashable {
         resumeID: String? = nil,
         systemPromptFile: String? = nil,
         configOverlays: [String] = [],
-        hostTools: [HostToolDefinition] = []
+        hostTools: [HostToolDefinition] = [],
+        mcpServers: [MCPServerSpec] = []
     ) {
         self.cwd = cwd
         self.modelSelection = modelSelection
@@ -34,6 +37,7 @@ public struct SessionConfig: Sendable, Hashable {
         self.systemPromptFile = systemPromptFile
         self.configOverlays = configOverlays
         self.hostTools = hostTools
+        self.mcpServers = mcpServers
     }
 }
 
@@ -88,12 +92,21 @@ public struct TurnInput: Sendable, Hashable {
     /// Applies from this turn on; the session switches model/effort in place.
     public var modelSelection: ModelSelection
     public var runtimeMode: RuntimeMode
+    /// Collaboration mode (Build vs. Plan); providers without Plan mode ignore it.
+    public var interactionMode: InteractionMode
 
-    public init(text: String, attachments: [Attachment], modelSelection: ModelSelection, runtimeMode: RuntimeMode) {
+    public init(
+        text: String,
+        attachments: [Attachment],
+        modelSelection: ModelSelection,
+        runtimeMode: RuntimeMode,
+        interactionMode: InteractionMode = .standard
+    ) {
         self.text = text
         self.attachments = attachments
         self.modelSelection = modelSelection
         self.runtimeMode = runtimeMode
+        self.interactionMode = interactionMode
     }
 }
 
@@ -284,6 +297,7 @@ extension ProviderSession {
 /// Creates sessions and probes the installed CLI for one provider.
 public protocol ProviderDriver: Sendable {
     var kind: ProviderKind { get }
+    var capabilities: ProviderCapabilities { get }
 
     /// Version, auth and model catalog. Never throws; problems land in `ProviderStatus.health`.
     func probe() async -> ProviderStatus
@@ -301,6 +315,8 @@ public protocol ProviderDriver: Sendable {
 }
 
 extension ProviderDriver {
+    public var capabilities: ProviderCapabilities { kind.capabilities }
+
     /// Drivers that list only from a live session answer nil.
     public func commands(directory: String) async -> [ProviderCommand]? { nil }
 }

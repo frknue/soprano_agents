@@ -125,6 +125,8 @@ public struct AgentThread: Codable, Sendable, Hashable, Identifiable {
 
     public var modelSelection: ModelSelection
     public var runtimeMode: RuntimeMode
+    /// Collaboration mode (Build vs. Plan) for providers that support it. Older files lack it.
+    public var interactionMode: InteractionMode
 
     /// Branch the thread works on (worktree branch or the checkout's branch at creation).
     public var branch: String?
@@ -163,6 +165,7 @@ public struct AgentThread: Codable, Sendable, Hashable, Identifiable {
         updatedAt: Date? = nil,
         modelSelection: ModelSelection,
         runtimeMode: RuntimeMode = .fullAccess,
+        interactionMode: InteractionMode = .standard,
         branch: String? = nil,
         worktreePath: String? = nil,
         pinnedAt: Date? = nil,
@@ -184,6 +187,7 @@ public struct AgentThread: Codable, Sendable, Hashable, Identifiable {
         self.updatedAt = updatedAt ?? createdAt
         self.modelSelection = modelSelection
         self.runtimeMode = runtimeMode
+        self.interactionMode = interactionMode
         self.branch = branch
         self.worktreePath = worktreePath
         self.pinnedAt = pinnedAt
@@ -237,6 +241,7 @@ extension AgentThread {
         updatedAt = try container.decode(Date.self, forKey: .updatedAt)
         modelSelection = try container.decode(ModelSelection.self, forKey: .modelSelection)
         runtimeMode = try container.decode(RuntimeMode.self, forKey: .runtimeMode)
+        interactionMode = try container.decodeIfPresent(InteractionMode.self, forKey: .interactionMode) ?? .standard
         branch = try container.decodeIfPresent(String.self, forKey: .branch)
         worktreePath = try container.decodeIfPresent(String.self, forKey: .worktreePath)
         pinnedAt = try container.decodeIfPresent(Date.self, forKey: .pinnedAt)

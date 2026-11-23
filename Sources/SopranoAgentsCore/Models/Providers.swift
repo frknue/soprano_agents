@@ -5,18 +5,21 @@ import Foundation
 public enum ProviderKind: String, Codable, Sendable, CaseIterable, Hashable {
     /// `omp --mode rpc-ui` (oh-my-pi's JSONL RPC with host-rendered tool UI: approvals, `ask`).
     case omp
-    /// OpenCode's v2 HTTP API on its background service (`opencode serve --service`), with the
-    /// server-sent event stream.
-    case opencode
+    /// OpenAI's Codex CLI as an app-server (`codex app-server --stdio`, JSON-RPC 2.0 over stdio).
+    case codex
     /// Google's Antigravity CLI as an ACP agent (`agy acp`, JSON-RPC over stdio) with its own
     /// agent and tools, signed in with a Google AI plan.
     case antigravity
+    /// OpenCode's v2 HTTP API on its background service (`opencode serve --service`), with the
+    /// server-sent event stream.
+    case opencode
 
     public var displayName: String {
         switch self {
         case .omp: "omp"
-        case .opencode: "OpenCode"
+        case .codex: "Codex"
         case .antigravity: "Antigravity"
+        case .opencode: "OpenCode"
         }
     }
 
@@ -24,14 +27,142 @@ public enum ProviderKind: String, Codable, Sendable, CaseIterable, Hashable {
     public var executableName: String {
         switch self {
         case .omp: "omp"
-        case .opencode: "opencode"
+        case .codex: "codex"
         case .antigravity: "agy"
+        case .opencode: "opencode"
         }
     }
 
     /// Default chat model before the live catalog is known:
     /// `ModelSelection.configuredDefaultModel`, whatever the CLI itself is configured to use.
     public var defaultModel: String { ModelSelection.configuredDefaultModel }
+
+    /// Declarative feature matrix for this provider. Used by the engine and UI instead of
+    /// hardcoding provider identity checks.
+    public var capabilities: ProviderCapabilities {
+        switch self {
+        case .omp:
+            ProviderCapabilities(
+                supportsSteer: true,
+                supportsRollback: true,
+                supportsPlanMode: false,
+                supportsNativeSubagents: true,
+                supportsNativeSideQuestions: true,
+                supportsMCPInjection: true,
+                supportsSystemPromptAppend: true,
+                supportsHostTools: true
+            )
+        case .codex:
+            ProviderCapabilities(
+                supportsSteer: true,
+                supportsRollback: true,
+                supportsPlanMode: true,
+                supportsNativeSubagents: true,
+                supportsNativeSideQuestions: false,
+                supportsMCPInjection: true,
+                supportsSystemPromptAppend: true,
+                supportsHostTools: false
+            )
+        case .antigravity:
+            ProviderCapabilities(
+                supportsSteer: false,
+                supportsRollback: false,
+                supportsPlanMode: false,
+                supportsNativeSubagents: false,
+                supportsNativeSideQuestions: false,
+                supportsMCPInjection: true,
+                supportsSystemPromptAppend: true,
+                supportsHostTools: false
+            )
+        case .opencode:
+            ProviderCapabilities(
+                supportsSteer: true,
+                supportsRollback: true,
+                supportsPlanMode: false,
+                supportsNativeSubagents: true,
+                supportsNativeSideQuestions: true,
+                supportsMCPInjection: true,
+                supportsSystemPromptAppend: false,
+                supportsHostTools: false
+            )
+        }
+    }
+}
+
+/// Capabilities a provider session supports natively.
+public struct ProviderCapabilities: Sendable, Hashable {
+    public var supportsSteer: Bool
+    public var supportsRollback: Bool
+    public var supportsPlanMode: Bool
+    public var supportsNativeSubagents: Bool
+    public var supportsNativeSideQuestions: Bool
+    public var supportsMCPInjection: Bool
+    public var supportsSystemPromptAppend: Bool
+    public var supportsHostTools: Bool
+
+    public init(
+        supportsSteer: Bool = false,
+        supportsRollback: Bool = false,
+        supportsPlanMode: Bool = false,
+        supportsNativeSubagents: Bool = false,
+        supportsNativeSideQuestions: Bool = false,
+        supportsMCPInjection: Bool = false,
+        supportsSystemPromptAppend: Bool = false,
+        supportsHostTools: Bool = false
+    ) {
+        self.supportsSteer = supportsSteer
+        self.supportsRollback = supportsRollback
+        self.supportsPlanMode = supportsPlanMode
+        self.supportsNativeSubagents = supportsNativeSubagents
+        self.supportsNativeSideQuestions = supportsNativeSideQuestions
+        self.supportsMCPInjection = supportsMCPInjection
+        self.supportsSystemPromptAppend = supportsSystemPromptAppend
+        self.supportsHostTools = supportsHostTools
+    }
+}
+
+/// High-level collaboration/interaction mode for providers that support Plan mode (Codex, Claude).
+public enum InteractionMode: String, Codable, Sendable, CaseIterable, Hashable {
+    case standard = "default"
+    case plan = "plan"
+
+    public var title: String {
+        switch self {
+        case .standard: "Build"
+        case .plan: "Plan"
+        }
+    }
+
+    public var summary: String {
+        switch self {
+        case .standard: "Edit files and execute commands according to permissions."
+        case .plan: "Design and plan changes before editing code."
+        }
+    }
+
+    public var symbolName: String {
+        switch self {
+        case .standard: "hammer"
+        case .plan: "list.bullet.clipboard"
+        }
+    }
+}
+
+/// OS-agnostic MCP server definition passed to provider sessions (stdio or HTTP/SSE).
+public struct MCPServerSpec: Codable, Sendable, Hashable, Identifiable {
+    public enum Transport: Codable, Sendable, Hashable {
+        case stdio(command: String, args: [String] = [], env: [String: String] = [:])
+        case http(url: String, headers: [String: String] = [:])
+    }
+
+    public var id: String { name }
+    public var name: String
+    public var transport: Transport
+
+    public init(name: String, transport: Transport) {
+        self.name = name
+        self.transport = transport
+    }
 }
 
 /// How much the agent may do without asking. Four modes with fixed labels.

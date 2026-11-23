@@ -54,6 +54,7 @@ extension AgentEngine {
             createdAt: now,
             modelSelection: draft.modelSelection,
             runtimeMode: draft.runtimeMode,
+            interactionMode: draft.interactionMode,
             isGeneratingTitle: settings.generateTitles
         )
         var worktree: (project: Project, baseBranch: String, branch: String)?

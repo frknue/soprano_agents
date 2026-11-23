@@ -40,8 +40,9 @@ struct AppSettings: Equatable, Sendable {
     /// nil = the provider's own configured model (`ModelSelection.configuredDefaultModel`).
     var defaultModel: String?
     var defaultRuntimeMode: RuntimeMode = .fullAccess
-    /// Executable overrides; nil = find `omp` / `opencode` / `agy` on PATH.
+    /// Executable overrides; nil = find `omp` / `codex` / `agy` / `opencode` on PATH.
     var ompPath: String?
+    var codexPath: String?
     var opencodePath: String?
     var antigravityPath: String?
 
@@ -98,6 +99,7 @@ struct AppSettings: Equatable, Sendable {
             worktreesDirectory: worktreesDirectory,
             generateTitles: generateTitles,
             ompPath: ompPath,
+            codexPath: codexPath,
             opencodePath: opencodePath,
             antigravityPath: antigravityPath
         )

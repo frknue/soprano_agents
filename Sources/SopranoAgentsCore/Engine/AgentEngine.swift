@@ -226,4 +226,8 @@ public final class AgentEngine {
     public func setRuntimeMode(_ threadID: String, _ mode: RuntimeMode) {
         updateThread(threadID) { $0.runtimeMode = mode }
     }
+
+    public func setInteractionMode(_ threadID: String, _ mode: InteractionMode) {
+        updateThread(threadID) { $0.interactionMode = mode }
+    }
 }

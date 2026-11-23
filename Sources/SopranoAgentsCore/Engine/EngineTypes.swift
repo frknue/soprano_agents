@@ -92,17 +92,20 @@ public struct ThreadDraft: Sendable, Hashable {
     public var projectID: String?
     public var modelSelection: ModelSelection
     public var runtimeMode: RuntimeMode
+    public var interactionMode: InteractionMode
     public var workspace: WorkspaceChoice
 
     public init(
         projectID: String?,
         modelSelection: ModelSelection,
         runtimeMode: RuntimeMode = .fullAccess,
+        interactionMode: InteractionMode = .standard,
         workspace: WorkspaceChoice = .projectRoot
     ) {
         self.projectID = projectID
         self.modelSelection = modelSelection
         self.runtimeMode = runtimeMode
+        self.interactionMode = interactionMode
         self.workspace = workspace
     }
 }
@@ -128,9 +131,10 @@ public struct EngineSettings: Sendable, Hashable {
     public var worktreesDirectory: String
     /// Generate thread titles with `textGenerationModel` after the first message.
     public var generateTitles: Bool
-    /// Executable overrides; nil = find `omp` / `opencode` / `agy` on PATH (`agy` also in omp's
-    /// downloads).
+    /// Executable overrides; nil = find `omp` / `codex` / `agy` / `opencode` on PATH (`agy` also
+    /// in omp's downloads).
     public var ompPath: String?
+    public var codexPath: String?
     public var opencodePath: String?
     public var antigravityPath: String?
 
@@ -142,6 +146,7 @@ public struct EngineSettings: Sendable, Hashable {
         worktreesDirectory: String = NSString(string: "~/.soprano-agents/worktrees").expandingTildeInPath,
         generateTitles: Bool = true,
         ompPath: String? = nil,
+        codexPath: String? = nil,
         opencodePath: String? = nil,
         antigravityPath: String? = nil
     ) {
@@ -152,6 +157,7 @@ public struct EngineSettings: Sendable, Hashable {
         self.worktreesDirectory = worktreesDirectory
         self.generateTitles = generateTitles
         self.ompPath = ompPath
+        self.codexPath = codexPath
         self.opencodePath = opencodePath
         self.antigravityPath = antigravityPath
     }

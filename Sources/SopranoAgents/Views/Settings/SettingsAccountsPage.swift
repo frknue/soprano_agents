@@ -1,11 +1,11 @@
 import AppKit
 import SopranoAgentsCore
 
-/// Settings → Accounts: one section per omp account list (its Claude logins, its Codex logins)
-/// with the preferred login, the others, sign-in and removal. Reads and acts only through
+/// Settings → Accounts: one section per account list (omp, Claude Code and Codex CLI logins)
+/// with the active/preferred login, the others, sign-in and removal. Reads and acts only through
 /// `accounts` (`AccountsCenter.source`); re-renders on every change.
 extension SettingsController {
-    static let accountsIntro = "Sign in to several Claude and Codex accounts. omp balances across them and tries the preferred one first."
+    static let accountsIntro = "Sign in to several Claude and Codex accounts across omp, Claude Code and Codex CLI."
 
     func accountsPage(_ form: SettingsForm) -> [NSView] {
         let snapshot = accounts.snapshot
@@ -47,27 +47,44 @@ extension SettingsController {
 
         return form.section(
             "\(listID.provider.displayName) · \(listID.tool.displayName)",
-            note: UsageText.listNote,
+            note: UsageText.listNote(for: listID),
             rows
         )
     }
 
-    /// "Automatic": no preferred login, so omp balances by usage.
+    /// "Automatic" (omp) or "System default" (Codex CLI / Claude Code).
     private func defaultAccountRow(_ list: AccountList, form: SettingsForm) -> NSView {
         let isSelected = list.selectedAccountId == nil
         let listID = list.id
+        let isOmp = listID.tool == .omp
         var buttons: [NSView] = []
         if !isSelected {
-            buttons.append(form.button("Automatic", size: .xs) { [weak self] in
+            buttons.append(form.button(isOmp ? "Automatic" : "Use Default", size: .xs) { [weak self] in
                 self?.accounts.select(accountId: nil, in: listID)
             })
         }
+        let title: String
+        let detail: String
+        let problem: String?
+        if isOmp {
+            title = "Automatic"
+            detail = "Balance by usage"
+            problem = nil
+        } else if let system = list.systemDefault {
+            title = system.identity.email.isEmpty ? "System default" : "\(system.identity.email) (System default)"
+            detail = UsageText.detailParts(system).joined(separator: "  ·  ")
+            problem = system.problem
+        } else {
+            title = "System default"
+            detail = "Use \(listID.tool.displayName)’s own login"
+            problem = nil
+        }
         return AccountEntryRowView(
-            title: "Automatic",
+            title: title,
             isSelected: isSelected,
             badge: isSelected ? "Active" : nil,
-            detail: "Balance by usage",
-            problem: nil,
+            detail: detail,
+            problem: problem,
             control: buttons.isEmpty ? nil : form.group(buttons),
             width: form.width
         )
@@ -77,9 +94,10 @@ extension SettingsController {
         let listID = list.id
         let accountId = account.id
         let isSelected = list.selectedAccountId == accountId
+        let isOmp = listID.tool == .omp
         var buttons: [NSView] = []
         if !isSelected {
-            buttons.append(form.button("Prefer", size: .xs) { [weak self] in
+            buttons.append(form.button(isOmp ? "Prefer" : "Use", size: .xs) { [weak self] in
                 self?.accounts.select(accountId: accountId, in: listID)
             })
         }
@@ -95,7 +113,7 @@ extension SettingsController {
         return AccountEntryRowView(
             title: account.identity.email,
             isSelected: isSelected,
-            badge: isSelected ? "Preferred" : nil,
+            badge: isSelected ? (isOmp ? "Preferred" : "Active") : nil,
             detail: UsageText.detailParts(account).joined(separator: "  ·  "),
             problem: account.problem,
             control: form.group(buttons),
@@ -139,7 +157,7 @@ extension SettingsController {
         Task { @MainActor in
             let confirmed = await Dialogs.confirm(
                 title: "Remove \(account.identity.email)?",
-                message: UsageText.removalExplanation,
+                message: UsageText.removalExplanation(for: listID),
                 confirmTitle: "Remove",
                 isDestructive: true,
                 in: host
