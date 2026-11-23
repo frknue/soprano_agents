@@ -99,10 +99,14 @@ public actor ClaudeSession: ProviderSession {
             if !commands.isEmpty {
                 continuation.yield(.commands(commands))
             }
-            let id = sessionID ?? config.resumeID ?? UUID().uuidString
-            sessionID = id
-            continuation.yield(.conversationID(id))
-            return id
+            if let id = sessionID ?? config.resumeID, !id.isEmpty {
+                sessionID = id
+                continuation.yield(.conversationID(id))
+                return id
+            }
+            // Wait until Claude reports its real `session_id` in the first frame rather than
+            // persisting a synthetic UUID that `--resume` would later reject.
+            return ""
         } catch {
             isClosing = true
             process.close()
@@ -136,9 +140,12 @@ public actor ClaudeSession: ProviderSession {
         guard !isClosing else { return }
         isClosing = true
         if isTurnActive {
-            _ = try? await sendControlRequest(["subtype": "interrupt"])
+            _ = try? await withProviderTimeout(1.5, label: "Claude Code close interrupt") {
+                try await self.sendControlRequest(["subtype": "interrupt"])
+            }
         }
         process?.close()
+        cleanupTempMCPFile()
         finish(error: nil)
     }
 
@@ -186,11 +193,18 @@ public actor ClaudeSession: ProviderSession {
 
     private func apply(_ selection: ModelSelection, runtimeMode: RuntimeMode, interactionMode: InteractionMode) async throws {
         let wantedModel = ClaudeProtocol.modelValue(selection)
-        if let wantedModel, wantedModel != currentModel {
-            _ = try await withProviderTimeout(Self.controlTimeout, label: "Claude Code model change") {
-                try await self.sendControlRequest(["subtype": "set_model", "model": .string(wantedModel)])
+        if let wantedModel {
+            if wantedModel != currentModel {
+                _ = try await withProviderTimeout(Self.controlTimeout, label: "Claude Code model change") {
+                    try await self.sendControlRequest(["subtype": "set_model", "model": .string(wantedModel)])
+                }
+                currentModel = wantedModel
             }
-            currentModel = wantedModel
+        } else if currentModel != nil {
+            _ = try await withProviderTimeout(Self.controlTimeout, label: "Claude Code model change") {
+                try await self.sendControlRequest(["subtype": "set_model", "model": .string("default")])
+            }
+            currentModel = nil
         }
         let wantedMode = ClaudeProtocol.permissionMode(for: runtimeMode, interactionMode: interactionMode)
         if wantedMode != currentPermissionMode {

@@ -39,7 +39,7 @@ public struct TeammateMemoryStore: Sendable {
         defer { sqlite3_close(db) }
 
         let cleanedTags = tags.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
-        let tagsText = cleanedTags.joined(separator: ",")
+        let tagsText = (try? JSONEncoder().encode(cleanedTags)).flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
         let timestamp = Int64(now.timeIntervalSince1970 * 1000)
 
         let sql = "INSERT INTO memories (content, tags, created_at) VALUES (?, ?, ?);"
@@ -65,7 +65,7 @@ public struct TeammateMemoryStore: Sendable {
         let db = try openDatabase()
         defer { sqlite3_close(db) }
 
-        let sql = "SELECT id, content, tags, created_at FROM memories ORDER BY created_at DESC LIMIT 500;"
+        let sql = "SELECT id, content, tags, created_at FROM memories ORDER BY created_at DESC;"
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
             throw EngineError.message("Failed to query memory: \(lastError(db))")
@@ -77,7 +77,13 @@ public struct TeammateMemoryStore: Sendable {
             let id = sqlite3_column_int64(stmt, 0)
             let content = sqlite3_column_text(stmt, 1).map { String(cString: $0) } ?? ""
             let tagsRaw = sqlite3_column_text(stmt, 2).map { String(cString: $0) } ?? ""
-            let tags = tagsRaw.split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+            let tags: [String]
+            if tagsRaw.hasPrefix("["), let data = tagsRaw.data(using: .utf8),
+               let decoded = try? JSONDecoder().decode([String].self, from: data) {
+                tags = decoded
+            } else {
+                tags = tagsRaw.split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+            }
             let ms = sqlite3_column_int64(stmt, 3)
             all.append(Entry(id: id, content: content, tags: tags, createdAt: Date(timeIntervalSince1970: Double(ms) / 1000.0)))
         }

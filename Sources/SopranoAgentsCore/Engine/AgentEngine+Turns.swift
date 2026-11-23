@@ -345,6 +345,9 @@ extension AgentEngine {
             let droppedCalls = Set(thread.turns.filter { $0.ordinal >= turn.ordinal }.flatMap { $0.items.map(\.id) })
             thread.subagents.removeAll { $0.parentToolCallID.map(droppedCalls.contains) ?? false }
             thread.turns.removeAll { $0.ordinal >= turn.ordinal }
+            if thread.turns.isEmpty {
+                thread.providerThreadID = nil
+            }
             thread.updatedAt = now
             // The conversation now ends where the kept turns ended.
             thread.contextUsage = thread.turns.last?.tokenUsage
@@ -401,6 +404,7 @@ extension AgentEngine {
         }
         removeThreadRecord(threadID)
         removePersistedSideQuestions(threadID)
+        runtime.teamBridge?.revokeToken(for: threadID)
         if let teammate = thread.teammate { teammateDeleted(threadID, teammate) }
 
         let git = environment.git

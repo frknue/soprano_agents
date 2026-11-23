@@ -91,11 +91,19 @@ function composer(threadID, { onSideQuestion }) {
     if ((!text && !ids.length) || sending || attachments.busy()) return;
     if (!ids.length && (text === '/btw' || /^\/btw\s+/i.test(text))) {
       const question = text.replace(/^\/btw\s*/i, '').trim();
+      const restored = field.value;
       field.value = '';
       sessionStorage.removeItem(DRAFT_PREFIX + threadID);
       grow();
       sync();
-      onSideQuestion(question);
+      onSideQuestion(question, () => {
+        if (!field.value) {
+          field.value = restored;
+          sessionStorage.setItem(DRAFT_PREFIX + threadID, restored);
+          grow();
+          sync();
+        }
+      });
       return;
     }
     sending = true;
@@ -177,7 +185,7 @@ export function mountThread(root, { id }) {
   let sideInput = null;
   let sideBusy = false;
 
-  const askSide = async (question, topicID = null) => {
+  const askSide = async (question, topicID = null, onFailure = null) => {
     const trimmed = String(question ?? '').trim();
     if (!trimmed || sideBusy) return;
     sideOpen = true;
@@ -188,6 +196,7 @@ export function mountThread(root, { id }) {
       const res = await post(`/api/threads/${enc(id)}/side-questions`, body);
       store.sideQuestions.set(id, { items: res.sideQuestions ?? [], starting: Boolean(res.starting) });
     } catch (error) {
+      onFailure?.();
       toastError(error, 'Side question');
     } finally {
       sideBusy = false;
@@ -195,12 +204,12 @@ export function mountThread(root, { id }) {
     }
   };
 
-  const openSidePanel = (initialQuestion = '') => {
+  const openSidePanel = (initialQuestion = '', onFailure = null) => {
     sideOpen = true;
-    loadSideQuestions(id);
     if (initialQuestion) {
-      askSide(initialQuestion);
+      askSide(initialQuestion, null, onFailure);
     } else {
+      loadSideQuestions(id);
       renderSideQuestions();
       requestAnimationFrame(() => sideInput?.focus());
     }
@@ -426,7 +435,9 @@ export function mountThread(root, { id }) {
   return {
     update(topic) {
       if (topic === 'thread' || topic === 'state') render();
-      if (topic === 'sideQuestions') renderSideQuestions();
+      if (topic === 'sideQuestions' && (!store.lastSideQuestionsThreadID || store.lastSideQuestionsThreadID === id)) {
+        renderSideQuestions();
+      }
     },
     destroy() {
       resizeObserver.disconnect();

@@ -147,10 +147,17 @@ extension AgentEngine {
     func recordTurnUsage(threadID: String, turnID: String, status: TurnStatus) {
         guard let ledger = environment.usageLedger,
               let thread = thread(threadID),
-              let turn = thread.turns.first(where: { $0.id == turnID })
+              let turnIndex = thread.turns.firstIndex(where: { $0.id == turnID })
         else { return }
+        let turn = thread.turns[turnIndex]
         let usage = turn.tokenUsage
         guard usage != nil || status == .failed else { return }
+
+        // `usedTokens` is the session's cumulative context fill; compute the incremental delta for
+        // this turn (falling back to the reported count if context shrank after compaction).
+        let previousUsed = turnIndex > 0 ? (thread.turns[turnIndex - 1].tokenUsage?.usedTokens ?? 0) : 0
+        let currentUsed = usage?.usedTokens ?? 0
+        let deltaTokens = currentUsed >= previousUsed ? (currentUsed - previousUsed) : currentUsed
 
         let cwd = workingDirectory(for: thread)
         let folder = UsageFolderName.encode(
@@ -164,7 +171,7 @@ extension AgentEngine {
             model: turn.modelSelection.model,
             agent: thread.teammate != nil ? "teammate" : "main",
             folder: folder,
-            inputTokens: usage?.usedTokens ?? 0,
+            inputTokens: deltaTokens,
             outputTokens: 0,
             cacheReadTokens: 0,
             cacheWriteTokens: 0,

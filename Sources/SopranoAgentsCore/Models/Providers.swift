@@ -70,7 +70,7 @@ public enum ProviderKind: String, Codable, Sendable, CaseIterable, Hashable {
         case .claude:
             ProviderCapabilities(
                 supportsSteer: true,
-                supportsRollback: true,
+                supportsRollback: false,
                 supportsPlanMode: true,
                 supportsNativeSubagents: true,
                 supportsNativeSideQuestions: false,

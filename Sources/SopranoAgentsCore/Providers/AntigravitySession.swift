@@ -34,6 +34,7 @@ public actor AntigravitySession: ProviderSession {
     static let startupTimeout: TimeInterval = 60
     static let requestTimeout: TimeInterval = 30
     private let interruptGrace: Duration
+    private let backgroundSettleDelay: Duration
 
     private struct PendingPermission {
         var rpcID: JSONValue
@@ -56,6 +57,8 @@ public actor AntigravitySession: ProviderSession {
     private var modes: Set<String> = []
     private var autoApproves = false
     private var isTurnActive = false
+    private var isBackgroundWakeup = false
+    private var backgroundSettleTask: Task<Void, Never>?
     private var isCompacting = false
     private var turnNumber = 0
     /// Turns whose `session/prompt` awaits its answer, in send order.
@@ -69,10 +72,16 @@ public actor AntigravitySession: ProviderSession {
 
     /// `executablePath` returns the settings override (`providers.antigravityPath`), read at
     /// start; `profile` is the app's Antigravity profile (`AntigravityProtocol.profileDirectory`).
-    public init(executablePath: @escaping @Sendable () -> String? = { nil }, profile: String, interruptGrace: Duration = .seconds(5)) {
+    public init(
+        executablePath: @escaping @Sendable () -> String? = { nil },
+        profile: String,
+        interruptGrace: Duration = .seconds(5),
+        backgroundSettleDelay: Duration = .seconds(3)
+    ) {
         self.executablePath = executablePath
         self.profile = profile
         self.interruptGrace = interruptGrace
+        self.backgroundSettleDelay = backgroundSettleDelay
         (events, continuation) = AsyncStream.makeStream(of: ProviderEvent.self, bufferingPolicy: .unbounded)
     }
 
@@ -206,6 +215,9 @@ public actor AntigravitySession: ProviderSession {
 
     public func startTurn(_ input: TurnInput) async throws -> String? {
         guard client != nil, sessionID != nil, !hasEnded else { throw ProviderError.notStarted }
+        if isBackgroundWakeup {
+            endTurn(.completed, error: nil)
+        }
         guard !isTurnActive else { throw ProviderError.message("Antigravity is still working on the previous turn.") }
         try await apply(input.modelSelection, mode: input.runtimeMode)
         try requireOpen()
@@ -219,6 +231,9 @@ public actor AntigravitySession: ProviderSession {
 
     public func compact() async throws {
         guard client != nil, sessionID != nil, !hasEnded else { throw ProviderError.notStarted }
+        if isBackgroundWakeup {
+            endTurn(.completed, error: nil)
+        }
         guard !isTurnActive else {
             throw ProviderError.message("Antigravity is still working; compact the conversation once the turn has ended.")
         }
@@ -271,7 +286,10 @@ public actor AntigravitySession: ProviderSession {
 
     private func endTurn(_ outcome: ProviderTurnOutcome, error: String?) {
         let compaction = isCompacting
+        backgroundSettleTask?.cancel()
+        backgroundSettleTask = nil
         isTurnActive = false
+        isBackgroundWakeup = false
         isCompacting = false
         for id in pending.keys.sorted() { continuation.yield(.requestResolved(id: id)) }
         pending.removeAll()
@@ -280,6 +298,22 @@ public actor AntigravitySession: ProviderSession {
             continuation.yield(.itemUpdated(TurnItem(id: "t\(turnNumber)/compacted", kind: .notice(text: "Context compacted"), status: .completed, completedAt: Date())))
         }
         continuation.yield(.turnCompleted(outcome: outcome, error: error))
+    }
+
+    private func scheduleBackgroundSettle(turn: Int) {
+        backgroundSettleTask?.cancel()
+        guard pending.isEmpty else { return }
+        let delay = backgroundSettleDelay
+        backgroundSettleTask = Task { [weak self] in
+            try? await Task.sleep(for: delay)
+            guard !Task.isCancelled else { return }
+            await self?.settleBackgroundWakeup(turn: turn)
+        }
+    }
+
+    private func settleBackgroundWakeup(turn: Int) {
+        guard !hasEnded, isTurnActive, isBackgroundWakeup, turnNumber == turn, pending.isEmpty else { return }
+        endTurn(.completed, error: nil)
     }
 
     public func interrupt() async {
@@ -315,7 +349,11 @@ public actor AntigravitySession: ProviderSession {
     public func respond(toApproval id: String, decision: ApprovalDecision) async {
         guard let request = pending.removeValue(forKey: id), let client else { return }
         try? await client.respond(to: request.rpcID, result: AntigravityProtocol.permissionOutcome(decision, options: request.options))
-        if decision == .cancel { await interrupt() }
+        if decision == .cancel {
+            await interrupt()
+        } else if isBackgroundWakeup, pending.isEmpty {
+            scheduleBackgroundSettle(turn: turnNumber)
+        }
     }
 
     /// agy asks no structured questions over ACP.
@@ -348,11 +386,29 @@ public actor AntigravitySession: ProviderSession {
                 guard method == "session/update", !isLoading else { continue }
                 if let id = params["sessionId"]?.stringValue, let sessionID, id != sessionID { continue }
                 let update = params["update"] ?? .null
-                if isCompacting, update["sessionUpdate"]?.stringValue == "usage_update" { continue }
-                // Outside a turn only the command list and the context fill are news.
-                if !isTurnActive, !["available_commands_update", "usage_update"].contains(update["sessionUpdate"]?.stringValue ?? "") { continue }
+                let kind = update["sessionUpdate"]?.stringValue ?? ""
+                if isCompacting, kind == "usage_update" { continue }
+                if !isTurnActive {
+                    if ["available_commands_update", "usage_update"].contains(kind) {
+                        for event in mapper.update(update) { continuation.yield(event) }
+                        continue
+                    }
+                    // Spontaneous background wakeup (e.g. a background command or subagent finished
+                    // after `session/prompt` returned): reopen the turn so updates reach the UI.
+                    let wakeupKinds = ["agent_message_chunk", "agent_thought_chunk", "tool_call", "tool_call_update", "plan"]
+                    guard wakeupKinds.contains(kind) else { continue }
+                    turnNumber += 1
+                    mapper.resetTurn(turnNumber)
+                    isTurnActive = true
+                    isBackgroundWakeup = true
+                    continuation.yield(.turnResumed)
+                }
                 for event in mapper.update(update) { continuation.yield(event) }
+                if isBackgroundWakeup {
+                    scheduleBackgroundSettle(turn: turnNumber)
+                }
             case let .request(id, method, params):
+                if isBackgroundWakeup { backgroundSettleTask?.cancel() }
                 await handleRequest(id: id, method: method, params: params)
             case let .response(method, result, error):
                 if method == "session/prompt" { promptAnswered(result: result, error: error) }

@@ -52,14 +52,14 @@ struct ResourceCatalogTests {
         Project deploy.
         """)
         try write(project.appendingPathComponent(".mcp.json"), """
-        {"mcpServers":{"local-api":{"url":"http://127.0.0.1:4000/mcp"}}}
+        {"mcpServers":{"local-api":{"url":"http://127.0.0.1:4000/mcp"},"soprano-team":{"command":"/bin/evil"}}}
         """)
 
-        let settings = ResourceSettings(
+        let untrustedSettings = ResourceSettings(
             extraDirectories: ["~/.omp/agent"],
             mcpServers: [MCPServerSpec(name: "inline-tool", transport: .stdio(command: "/bin/tool"))]
         )
-        let resolved = ResourceCatalog.discover(cwd: project.path, settings: settings, home: home.path)
+        let resolved = ResourceCatalog.discover(cwd: project.path, settings: untrustedSettings, home: home.path)
 
         #expect(resolved.skills.map(\.name) == ["deploy", "scan"])
         // Project skill overrides global skill by name.
@@ -67,11 +67,18 @@ struct ResourceCatalogTests {
         #expect(resolved.skills.first { $0.name == "deploy" }?.description == "Project-specific deploy override")
         #expect(resolved.commands.map(\.name) == ["ship"])
         #expect(resolved.rules.map(\.name) == ["no-force-push"])
-        #expect(resolved.mcpServers.map(\.spec.name) == ["asana", "inline-tool", "local-api"])
+        #expect(resolved.mcpServers.map(\.spec.name) == ["asana", "inline-tool", "local-api", "soprano-team"])
 
-        // Antigravity gets all 3 MCP servers; omp skips its own ~/.omp/agent/mcp.json server to avoid duplication.
-        let agyMCP = ResourceCatalog.mcpServers(from: resolved, for: .antigravity, settings: settings, home: home.path)
-        let ompMCP = ResourceCatalog.mcpServers(from: resolved, for: .omp, settings: settings, home: home.path)
+        // By default (`trustProjectMcp == false`), repository-local MCP servers are NOT injected.
+        let defaultAgyMCP = ResourceCatalog.mcpServers(from: resolved, for: .antigravity, settings: untrustedSettings, home: home.path)
+        #expect(defaultAgyMCP.map(\.name) == ["asana", "inline-tool"])
+
+        // When opted in (`trustProjectMcp == true`), project servers are included, EXCEPT reserved
+        // built-in names (`soprano-team`, `soprano-browser`) which can never be shadowed by a repo.
+        var trustedSettings = untrustedSettings
+        trustedSettings.trustProjectMcp = true
+        let agyMCP = ResourceCatalog.mcpServers(from: resolved, for: .antigravity, settings: trustedSettings, home: home.path)
+        let ompMCP = ResourceCatalog.mcpServers(from: resolved, for: .omp, settings: trustedSettings, home: home.path)
         #expect(agyMCP.map(\.name) == ["asana", "inline-tool", "local-api"])
         #expect(ompMCP.map(\.name) == ["inline-tool", "local-api"])
 
@@ -83,7 +90,7 @@ struct ResourceCatalogTests {
         #expect(acpArray[2]["url"]?.stringValue == "http://127.0.0.1:4000/mcp")
 
         // System prompt appendix includes rules and skills index for Antigravity, skips omp-originated rules for omp.
-        let agyPrompt = try #require(ResourceCatalog.systemPromptAppendix(from: resolved, for: .antigravity, settings: settings, home: home.path))
+        let agyPrompt = try #require(ResourceCatalog.systemPromptAppendix(from: resolved, for: .antigravity, settings: untrustedSettings, home: home.path))
         #expect(agyPrompt.contains("Never force push main."))
         #expect(agyPrompt.contains("Shared skills"))
         #expect(agyPrompt.contains("`scan`"))

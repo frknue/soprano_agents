@@ -29,6 +29,8 @@ final class EngineRuntime {
     var hostToolTasks: [String: Task<Void, Never>] = [:]
     /// Loopback HTTP bridge serving Team & Memory MCP tools to non-omp provider sessions.
     var teamBridge: TeamBridgeServer?
+    /// Short-lived cache for `ResourceCatalog.discover` so `/` command menu keystrokes don't rescan disk.
+    var resourceCache: [String: (expires: Date, settings: ResourceSettings, resolved: ResolvedResources)] = [:]
 
     func thread(_ id: String) -> ThreadRuntime {
         if let existing = threads[id] { return existing }
@@ -118,6 +120,7 @@ final class ThreadRuntime {
     var sideQuestionCancelRequested = false
     /// Fallback engine-level side-question task (for providers without native `/btw`).
     var sideQuestionTask: Task<Void, Never>?
+    var sideQuestionTaskID: UUID?
     /// The teammate's persona or home changed: its next turn starts a new process (resuming
     /// the conversation) so the new launch settings apply.
     var relaunchRequested = false

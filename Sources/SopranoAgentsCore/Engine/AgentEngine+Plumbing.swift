@@ -160,10 +160,12 @@ extension AgentEngine {
             if capture { await captureTurnCheckpoint(threadID, turnID) }
             // A teammate's reply names the files its turn changed.
             resolveTeamWaits(threadID)
-            if status == .completed {
-                await runPostTurnWorkflows(threadID: threadID, turnID: turnID)
-            }
             if drain { await drainQueue(threadID) }
+            if status == .completed {
+                runtime.track(beforeQuit: false) { [self] in
+                    await runPostTurnWorkflows(threadID: threadID, turnID: turnID)
+                }
+            }
         }
     }
 
@@ -306,7 +308,9 @@ extension AgentEngine {
         rt.consumer = consume(session, threadID: threadID)
         let task = Task<any ProviderSession, any Error> { @MainActor [self] in
             let conversationID = try await session.start(config)
-            updateThread(threadID) { $0.providerThreadID = conversationID }
+            if !conversationID.isEmpty {
+                updateThread(threadID) { $0.providerThreadID = conversationID }
+            }
             // The team may have changed while the process started (`refreshTeamTools` waits for
             // starting sessions): bring its tools up to date before the first turn.
             var applied = config.hostTools
@@ -425,11 +429,23 @@ extension AgentEngine {
         case let .turnYielded(outcome, error):
             yieldTurn(threadID, outcome: outcome, error: error)
         case .turnResumed:
-            guard let turn = thread(threadID)?.openTurn, turn.yieldedAt != nil else { return }
-            mutateTurn(threadID, turn.id) {
-                $0.yieldedAt = nil
-                $0.resumedAt = environment.now()
-                $0.wokenAt = $0.wokenAt ?? $0.resumedAt
+            let now = environment.now()
+            if let turn = thread(threadID)?.openTurn, turn.yieldedAt != nil {
+                mutateTurn(threadID, turn.id) {
+                    $0.yieldedAt = nil
+                    $0.resumedAt = now
+                    $0.wokenAt = $0.wokenAt ?? now
+                }
+            } else if thread(threadID)?.openTurn == nil, let last = thread(threadID)?.turns.last {
+                // Spontaneous background wakeup (e.g. Antigravity background task finished after
+                // `session/prompt` returned): reopen the last turn so its reply appears live.
+                runtime.thread(threadID).liveTurnID = last.id
+                mutateTurn(threadID, last.id) {
+                    $0.status = .running
+                    $0.completedAt = nil
+                    $0.resumedAt = now
+                    $0.wokenAt = $0.wokenAt ?? now
+                }
             }
         case let .sessionEnded(error):
             sessionEnded(threadID, error: error)

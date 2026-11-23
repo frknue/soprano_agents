@@ -59,9 +59,11 @@ All notable changes to Soprano Agents are documented here. The format follows
   `~/.config/soprano-agents/`, `~/.agents/skills`, project overrides (`.soprano-agents/`,
   `.agents/skills`), plus optional `resources.extraDirectories`, `resources.importMcpFiles` and
   inline `mcpServers` in `settings.json`, are shared across `omp`, Codex, Claude Code, Antigravity
-  and OpenCode. Shared commands and `/skill:<name>` prompts appear in every provider's `/` menu,
-  instructions/skills are appended to sessions that support system-prompt injection, and MCP
-  servers are injected into Codex, Claude Code and Antigravity sessions automatically.
+  and OpenCode. Repository-local MCP configs (`.mcp.json`, `.agents/mcp.json`) require explicit
+  opt-in via `resources.trustProjectMcp` and can never shadow built-in servers. Shared commands and
+  `/skill:<name>` prompts appear in every provider's `/` menu, instructions/skills are appended to
+  sessions that support system-prompt injection, and MCP servers are injected into Codex, Claude
+  Code and Antigravity sessions automatically.
 - Claude Code threads via `claude --print --output-format stream-json --input-format stream-json`:
   the model picker (⇧⌘M) gets a Claude Code column with its live model catalog, reasoning efforts
   and Fast Mode; inline tool approvals (`can_use_tool`) and `AskUserQuestion` dialogs, Plan mode

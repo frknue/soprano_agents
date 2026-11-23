@@ -174,7 +174,9 @@ public actor CodexSession: ProviderSession {
         guard !isClosing else { return }
         isClosing = true
         if let client, let threadID, let activeTurnID {
-            _ = try? await client.request("turn/interrupt", ["threadId": .string(threadID), "turnId": .string(activeTurnID)])
+            _ = try? await withProviderTimeout(1.5, label: "Codex close interrupt") {
+                try await client.request("turn/interrupt", ["threadId": .string(threadID), "turnId": .string(activeTurnID)])
+            }
         }
         await client?.close()
         finish(error: nil)
@@ -357,7 +359,15 @@ public actor CodexSession: ProviderSession {
         }
         let mapped = mapper.notification(method: method, params: params)
         if method == "turn/completed" {
-            let turnID = params["turn"]?["id"]?.nonEmptyString ?? activeTurnID
+            let reportedID = params["turn"]?["id"]?.nonEmptyString
+            // Ignore stale completions arriving after a forced interrupt or belonging to an older turn.
+            if let reportedID, let current = activeTurnID, reportedID != current {
+                return
+            }
+            if activeTurnID == nil, !isCompacting {
+                return
+            }
+            let turnID = reportedID ?? activeTurnID
             if let turnID, !isCompacting, !completedTurnIDs.contains(turnID) {
                 completedTurnIDs.append(turnID)
             }

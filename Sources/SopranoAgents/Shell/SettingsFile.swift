@@ -142,7 +142,9 @@ enum SettingsFile {
             // Share discovered instructions, rules and skills index with providers that support it.
             "injectInstructions": true,
             // Share discovered MCP servers with providers that support MCP injection.
-            "injectMcp": true
+            "injectMcp": true,
+            // Trust and run repository-local MCP configs (.mcp.json, .agents/mcp.json, .soprano-agents/mcp.json).
+            "trustProjectMcp": false
           },
 
           "mcpServers": {

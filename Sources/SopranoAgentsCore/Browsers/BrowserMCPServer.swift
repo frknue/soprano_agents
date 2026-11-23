@@ -58,9 +58,14 @@ public actor LiveCDPTransport: CDPTransport {
 
         init(endpoint: String, wsURL: URL) {
             self.endpoint = endpoint
-            self.task = URLSession.shared.webSocketTask(with: wsURL)
+            let socketTask = URLSession.shared.webSocketTask(with: wsURL)
+            // Full-page base64 PNG screenshots regularly exceed the 1 MiB default limit.
+            socketTask.maximumMessageSize = 64 * 1024 * 1024
+            self.task = socketTask
             self.task.resume()
         }
+
+        var isClosed: Bool { closed }
 
         func start() {
             guard readerTask == nil else { return }
@@ -69,7 +74,7 @@ public actor LiveCDPTransport: CDPTransport {
             }
         }
 
-        func send(method: String, params: [String: JSONValue], sessionID: String?) async throws -> JSONValue {
+        func send(method: String, params: [String: JSONValue], sessionID: String?, timeoutSeconds: TimeInterval = 30) async throws -> JSONValue {
             guard !closed else { throw CDPError.browserNotReachable(endpoint) }
             let id = nextID
             nextID += 1
@@ -85,6 +90,12 @@ public actor LiveCDPTransport: CDPTransport {
             guard let text = String(data: data, encoding: .utf8) else {
                 throw CDPError.protocolError("Failed to encode CDP message")
             }
+            let timeoutTask = Task { [weak self] in
+                try? await Task.sleep(nanoseconds: UInt64(max(1, timeoutSeconds) * 1_000_000_000))
+                guard !Task.isCancelled else { return }
+                await self?.failWaiter(id: id, error: CDPError.protocolError("CDP call \(method) timed out after \(Int(timeoutSeconds))s"))
+            }
+            defer { timeoutTask.cancel() }
             return try await withCheckedThrowingContinuation { continuation in
                 waiters[id] = continuation
                 task.send(.string(text)) { [weak self] error in
@@ -97,6 +108,10 @@ public actor LiveCDPTransport: CDPTransport {
 
         func drainEvents(sessionID: String) -> [CDPEvent] {
             eventsBySession.removeValue(forKey: sessionID) ?? []
+        }
+
+        func pruneSession(_ sessionID: String) {
+            eventsBySession.removeValue(forKey: sessionID)
         }
 
         func close() {
@@ -162,11 +177,19 @@ public actor LiveCDPTransport: CDPTransport {
         sessionID: String?
     ) async throws -> JSONValue {
         let socket = try await socket(for: endpoint)
-        return try await socket.send(method: method, params: params, sessionID: sessionID)
+        do {
+            return try await socket.send(method: method, params: params, sessionID: sessionID)
+        } catch {
+            if await socket.isClosed {
+                sockets.removeValue(forKey: socket.endpoint)
+            }
+            throw error
+        }
     }
 
     public func drainEvents(endpoint: String, sessionID: String) async -> [CDPEvent] {
-        guard let socket = sockets[endpoint] else { return [] }
+        let key = BrowserProfileResolver.validatedLocalCDPEndpoint(endpoint) ?? endpoint
+        guard let socket = sockets[key] else { return [] }
         return await socket.drainEvents(sessionID: sessionID)
     }
 
@@ -178,11 +201,14 @@ public actor LiveCDPTransport: CDPTransport {
     }
 
     private func socket(for endpoint: String) async throws -> BrowserSocket {
-        if let existing = sockets[endpoint] { return existing }
         guard let normalized = BrowserProfileResolver.validatedLocalCDPEndpoint(endpoint),
               let versionURL = URL(string: "\(normalized)/json/version")
         else {
             throw CDPError.invalidEndpoint(endpoint)
+        }
+        if let existing = sockets[normalized] {
+            if await !existing.isClosed { return existing }
+            sockets.removeValue(forKey: normalized)
         }
         var request = URLRequest(url: versionURL, timeoutInterval: 2.0)
         request.httpMethod = "GET"
@@ -195,7 +221,9 @@ public actor LiveCDPTransport: CDPTransport {
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let wsString = object["webSocketDebuggerUrl"] as? String,
-              let wsURL = URL(string: wsString)
+              let wsURL = URL(string: wsString),
+              let wsHost = wsURL.host?.lowercased(),
+              wsHost == "127.0.0.1" || wsHost == "localhost" || wsHost == "::1"
         else {
             throw CDPError.browserNotReachable(normalized)
         }
@@ -553,20 +581,23 @@ public actor BrowserMCPDispatcher {
                   let text = String(data: data, encoding: .utf8),
                   let entry = try? JSONValue.parse(text),
                   let ownerPID = entry["pid"]?.intValue,
+                  let pid32 = Int32(exactly: ownerPID),
+                  pid32 > 0,
                   let targetID = entry["targetId"]?.nonEmptyString,
                   let endpoint = entry["endpoint"]?.nonEmptyString,
                   let validEndpoint = BrowserProfileResolver.validatedLocalCDPEndpoint(endpoint)
             else { continue }
-            if kill(Int32(ownerPID), 0) == 0 || errno == EPERM {
+            if kill(pid32, 0) == 0 || errno == EPERM {
                 continue
             }
-            _ = try? await transport.send(
+            if (try? await transport.send(
                 endpoint: validEndpoint,
                 method: "Target.closeTarget",
                 params: ["targetId": .string(targetID)],
                 sessionID: nil
-            )
-            try? FileManager.default.removeItem(at: file)
+            )) != nil {
+                try? FileManager.default.removeItem(at: file)
+            }
         }
     }
 
@@ -591,10 +622,22 @@ public actor BrowserMCPDispatcher {
         throw CDPError.invalidArguments("No browser profile is configured. Configure \"browsers.profiles\" in settings.json.")
     }
 
+    private static func validatedNavigationURL(_ raw: String) throws -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let parsed = URLComponents(string: trimmed),
+              let scheme = parsed.scheme?.lowercased(),
+              scheme == "http" || scheme == "https"
+        else {
+            throw CDPError.invalidArguments("Only http:// and https:// URLs are allowed (got \"\(trimmed)\").")
+        }
+        return trimmed
+    }
+
     private func openPage(name: String, url: String, requestedProfile: String?) async throws -> JSONValue {
         if pages[name] != nil {
             throw CDPError.invalidArguments("Page \"\(name)\" already exists; navigate or close it first.")
         }
+        let validURL = try Self.validatedNavigationURL(url)
         let (endpoint, profileID) = try resolveEndpoint(requestedProfile: requestedProfile)
 
         let created = try await transport.send(
@@ -663,22 +706,25 @@ public actor BrowserMCPDispatcher {
                 endpoint: endpoint,
                 targetID: targetID,
                 sessionID: sessionID,
-                url: url,
+                url: validURL,
                 lastUsed: Date(),
                 logs: [],
                 network: [],
                 ledgerPath: ledgerPath
             )
 
-            _ = try await transport.send(
+            let navResult = try await transport.send(
                 endpoint: endpoint,
                 method: "Page.navigate",
-                params: ["url": .string(url)],
+                params: ["url": .string(validURL)],
                 sessionID: sessionID
             )
+            if let errorText = navResult["errorText"]?.nonEmptyString {
+                throw CDPError.protocolError("Navigation failed: \(errorText)")
+            }
             await waitForDocumentReady(endpoint: endpoint, sessionID: sessionID)
 
-            let currentURL = (try? await evalJS(endpoint: endpoint, sessionID: sessionID, expression: "location.href"))?.stringValue ?? url
+            let currentURL = (try? await evalJS(endpoint: endpoint, sessionID: sessionID, expression: "location.href"))?.stringValue ?? validURL
             pages[name]?.url = currentURL
             return .object([
                 "name": .string(name),
@@ -703,13 +749,21 @@ public actor BrowserMCPDispatcher {
 
     private func closePage(name: String) async throws -> Bool {
         guard let page = pages.removeValue(forKey: name) else { return false }
-        _ = try? await transport.send(
-            endpoint: page.endpoint,
-            method: "Target.closeTarget",
-            params: ["targetId": .string(page.targetID)],
-            sessionID: nil
-        )
-        if let ledgerPath = page.ledgerPath {
+        let closedRemotely: Bool
+        do {
+            _ = try await transport.send(
+                endpoint: page.endpoint,
+                method: "Target.closeTarget",
+                params: ["targetId": .string(page.targetID)],
+                sessionID: nil
+            )
+            closedRemotely = true
+        } catch {
+            closedRemotely = false
+        }
+        // Only remove the ledger entry when Chromium confirmed the close; otherwise leave it so
+        // orphan cleanup can reclaim the tab after reconnect.
+        if closedRemotely, let ledgerPath = page.ledgerPath {
             try? FileManager.default.removeItem(atPath: ledgerPath)
         }
         return true
@@ -838,7 +892,11 @@ public actor BrowserMCPDispatcher {
         switch action {
         case "navigate":
             guard let value, !value.isEmpty else { throw CDPError.invalidArguments("navigate requires value (URL).") }
-            _ = try await transport.send(endpoint: page.endpoint, method: "Page.navigate", params: ["url": .string(value)], sessionID: page.sessionID)
+            let validURL = try Self.validatedNavigationURL(value)
+            let navResult = try await transport.send(endpoint: page.endpoint, method: "Page.navigate", params: ["url": .string(validURL)], sessionID: page.sessionID)
+            if let errorText = navResult["errorText"]?.nonEmptyString {
+                throw CDPError.protocolError("Navigation failed: \(errorText)")
+            }
             await waitForDocumentReady(endpoint: page.endpoint, sessionID: page.sessionID)
 
         case "reload":
@@ -931,7 +989,9 @@ public actor BrowserMCPDispatcher {
             params: ["urls": .array([.string(currentURL)])],
             sessionID: page.sessionID
         )
-        return refreshed["cookies"] ?? .array([])
+        // Strip HttpOnly session cookies so sensitive tokens are not leaked into agent transcripts.
+        let safeCookies = (refreshed["cookies"]?.arrayValue ?? []).filter { $0["httpOnly"]?.boolValue != true }
+        return .array(safeCookies)
     }
 
     // MARK: Helpers

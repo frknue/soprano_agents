@@ -152,7 +152,7 @@ extension AgentEngine {
             if (!team.isEmpty || thread.teammate != nil),
                let executable = environment.executablePath,
                !config.mcpServers.contains(where: { $0.name == "soprano-team" }),
-               let bridge = ensureTeamBridge() {
+               let bridge = ensureTeamBridge(for: thread.id) {
                 config.mcpServers.append(MCPServerSpec(
                     name: "soprano-team",
                     transport: .stdio(
@@ -250,13 +250,23 @@ extension AgentEngine {
         )
     }
 
-    /// Discovers shared resources (skills, commands, rules, instructions, MCP servers) for `cwd`.
+    /// Discovers shared resources (skills, commands, rules, instructions, MCP servers) for `cwd`,
+    /// cached briefly so `/` menu keystrokes never rescan the filesystem.
     public func resolvedResources(forDirectory cwd: String? = nil) -> ResolvedResources {
         guard let home = environment.resourceHome else {
             guard !settings.resources.mcpServers.isEmpty else { return ResolvedResources() }
             return ResolvedResources(mcpServers: settings.resources.mcpServers.map { SharedMCPServer(spec: $0, source: .soprano) })
         }
-        return ResourceCatalog.discover(cwd: cwd, settings: settings.resources, home: home)
+        let cacheKey = "\(home)\n\(cwd ?? "")"
+        let now = Date()
+        if let cached = runtime.resourceCache[cacheKey],
+           cached.expires > now,
+           cached.settings == settings.resources {
+            return cached.resolved
+        }
+        let discovered = ResourceCatalog.discover(cwd: cwd, settings: settings.resources, home: home)
+        runtime.resourceCache[cacheKey] = (now.addingTimeInterval(5), settings.resources, discovered)
+        return discovered
     }
 
     /// The team tools of `thread`'s conversation: the other teammates it can reach.
@@ -274,10 +284,11 @@ extension AgentEngine {
         return defs
     }
 
-    /// Starts the loopback Team MCP bridge lazily when a non-omp session needs team/memory tools.
-    private func ensureTeamBridge() -> (endpoint: String, token: String)? {
+    /// Starts the loopback Team MCP bridge lazily and issues a per-thread bearer token bound
+    /// strictly to `threadID`.
+    private func ensureTeamBridge(for threadID: String) -> (endpoint: String, token: String)? {
         if let existing = runtime.teamBridge, let url = existing.endpoint {
-            return (url, existing.token)
+            return (url, existing.token(for: threadID))
         }
         let server = TeamBridgeServer(
             listHandler: { [weak self] threadID in
@@ -300,7 +311,7 @@ extension AgentEngine {
         )
         guard let url = try? server.start() else { return nil }
         runtime.teamBridge = server
-        return (url, server.token)
+        return (url, server.token(for: threadID))
     }
 
     /// The team changed: every live omp conversation gets the new tools. A session still starting

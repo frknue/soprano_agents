@@ -216,12 +216,31 @@ struct BrowserProfileTests {
         #expect(shot.content.first?["mimeType"]?.stringValue == "image/png")
         #expect(shot.content.first?["data"]?.stringValue == "iVBORw0KGgo=")
 
-        // Cookies refuse cross-domain overrides.
+        // Rejects non-HTTP(S) schemes like file:// and chrome://.
+        let fileOpen = await dispatcher.callTool(name: "open", arguments: .object([
+            "name": .string("bad"),
+            "url": .string("file:///etc/passwd"),
+        ]))
+        #expect(fileOpen.isError)
+        let chromeNav = await dispatcher.callTool(name: "action", arguments: .object([
+            "name": .string("preview"),
+            "action": .string("navigate"),
+            "value": .string("chrome://settings"),
+        ]))
+        #expect(chromeNav.isError)
+
+        // Cookies refuse cross-domain overrides and strip HttpOnly session cookies.
         let badCookie = await dispatcher.callTool(name: "cookies", arguments: .object([
             "name": .string("preview"),
             "set": .array([.object(["name": .string("sid"), "value": .string("1"), "domain": .string("other.test")])]),
         ]))
         #expect(badCookie.isError)
+
+        let cookieRead = await dispatcher.callTool(name: "cookies", arguments: .object(["name": .string("preview")]))
+        #expect(!cookieRead.isError)
+        let cookieText = cookieRead.content.first?["text"]?.stringValue ?? ""
+        #expect(cookieText.contains("theme"))
+        #expect(!cookieText.contains("secret_session"))
 
         // Closing removes only the owned target.
         let closed = await dispatcher.callTool(name: "close", arguments: .object(["name": .string("preview")]))
@@ -300,7 +319,10 @@ private actor MockCDPTransport: CDPTransport {
         case "Page.captureScreenshot":
             return .object(["data": .string("iVBORw0KGgo=")])
         case "Network.getCookies":
-            return .object(["cookies": .array([])])
+            return .object(["cookies": .array([
+                .object(["name": .string("theme"), "value": .string("dark"), "httpOnly": .bool(false)]),
+                .object(["name": .string("secret_session"), "value": .string("xyz"), "httpOnly": .bool(true)]),
+            ])])
         case "Runtime.evaluate":
             let expr = params["expression"]?.stringValue ?? ""
             if expr == "document.readyState" {

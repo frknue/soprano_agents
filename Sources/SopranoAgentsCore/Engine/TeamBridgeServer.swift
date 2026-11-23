@@ -173,13 +173,18 @@ public final class TeamBridgeServer: @unchecked Sendable {
     public typealias ListHandler = @Sendable (_ threadID: String) async -> [HostToolDefinition]
     public typealias CallHandler = @Sendable (_ threadID: String, _ name: String, _ arguments: JSONValue) async -> HostToolResult
 
-    public let token: String
+    private static let maxBodyBytes = 4 * 1024 * 1024
+
     private let listHandler: ListHandler
     private let callHandler: CallHandler
     private let queue = DispatchQueue(label: "com.soprano.agents.team-bridge")
     private var listener: NWListener?
     private let lock = NSLock()
     private var boundPort: UInt16?
+    /// Per-thread bearer tokens so a session can only act as its own threadID (never impersonate
+    /// a teammate to call `team_delete` or read another teammate's memory).
+    private var tokensByThread: [String: String] = [:]
+    private var threadsByToken: [String: String] = [:]
 
     public var endpoint: String? {
         lock.withLock {
@@ -188,9 +193,28 @@ public final class TeamBridgeServer: @unchecked Sendable {
     }
 
     public init(listHandler: @escaping ListHandler, callHandler: @escaping CallHandler) {
-        self.token = UUID().uuidString.replacingOccurrences(of: "-", with: "") + UUID().uuidString.replacingOccurrences(of: "-", with: "")
         self.listHandler = listHandler
         self.callHandler = callHandler
+    }
+
+    /// Returns a unique bearer token bound strictly to `threadID`.
+    public func token(for threadID: String) -> String {
+        lock.withLock {
+            if let existing = tokensByThread[threadID] { return existing }
+            let generated = UUID().uuidString.replacingOccurrences(of: "-", with: "")
+                + UUID().uuidString.replacingOccurrences(of: "-", with: "")
+            tokensByThread[threadID] = generated
+            threadsByToken[generated] = threadID
+            return generated
+        }
+    }
+
+    public func revokeToken(for threadID: String) {
+        lock.withLock {
+            if let token = tokensByThread.removeValue(forKey: threadID) {
+                threadsByToken.removeValue(forKey: token)
+            }
+        }
     }
 
     public func start() throws -> String {
@@ -238,41 +262,77 @@ public final class TeamBridgeServer: @unchecked Sendable {
     public func stop() {
         listener?.cancel()
         listener = nil
-        lock.withLock { boundPort = nil }
+        lock.withLock {
+            boundPort = nil
+            tokensByThread.removeAll()
+            threadsByToken.removeAll()
+        }
     }
 
     private func handle(_ connection: NWConnection) {
         connection.start(queue: queue)
-        receiveRequest(on: connection, buffer: Data())
+        let timeout = Task { [weak connection] in
+            try? await Task.sleep(nanoseconds: 30_000_000_000)
+            guard !Task.isCancelled else { return }
+            connection?.cancel()
+        }
+        receiveRequest(on: connection, buffer: Data(), timeout: timeout)
     }
 
-    private func receiveRequest(on connection: NWConnection, buffer: Data) {
+    private func receiveRequest(on connection: NWConnection, buffer: Data, timeout: Task<Void, Never>) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] data, _, isComplete, error in
-            guard let self else { connection.cancel(); return }
+            guard let self else { timeout.cancel(); connection.cancel(); return }
             var accumulated = buffer
             if let data { accumulated.append(data) }
-            if let parsed = Self.parseHTTPRequest(accumulated) {
+            switch Self.parseHTTPRequest(accumulated) {
+            case let .complete(parsed):
+                timeout.cancel()
                 Task {
                     await self.dispatch(parsed, on: connection)
                 }
                 return
+            case .invalid:
+                timeout.cancel()
+                self.sendResponse(status: "400 Bad Request", body: Data("{\"error\":\"invalid request\"}".utf8), on: connection)
+                return
+            case .incomplete:
+                break
             }
-            if isComplete || error != nil || accumulated.count > 4 * 1024 * 1024 {
+            if isComplete || error != nil || accumulated.count > Self.maxBodyBytes {
+                timeout.cancel()
                 connection.cancel()
                 return
             }
-            self.receiveRequest(on: connection, buffer: accumulated)
+            self.receiveRequest(on: connection, buffer: accumulated, timeout: timeout)
         }
     }
 
+    private func authenticatedThreadID(for authHeader: String?) -> String? {
+        guard let authHeader, authHeader.hasPrefix("Bearer ") else { return nil }
+        let candidate = Array(authHeader.dropFirst("Bearer ".count).utf8)
+        return lock.withLock {
+            for (storedToken, threadID) in threadsByToken {
+                if Self.constantTimeEqual(candidate, Array(storedToken.utf8)) {
+                    return threadID
+                }
+            }
+            return nil
+        }
+    }
+
+    private static func constantTimeEqual(_ a: [UInt8], _ b: [UInt8]) -> Bool {
+        guard a.count == b.count else { return false }
+        var diff: UInt8 = 0
+        for i in 0..<a.count { diff |= a[i] ^ b[i] }
+        return diff == 0
+    }
+
     private func dispatch(_ request: ParsedHTTPRequest, on connection: NWConnection) async {
-        guard request.headers["authorization"] == "Bearer \(token)" else {
+        guard let threadID = authenticatedThreadID(for: request.headers["authorization"]) else {
             sendResponse(status: "401 Unauthorized", body: Data("{\"error\":\"unauthorized\"}".utf8), on: connection)
             return
         }
-        guard let payload = try? JSONValue.parse(String(decoding: request.body, as: UTF8.self)),
-              let threadID = payload["threadID"]?.stringValue
-        else {
+        guard let payload = try? JSONValue.parse(String(decoding: request.body, as: UTF8.self)) else {
             sendResponse(status: "400 Bad Request", body: Data("{\"error\":\"invalid payload\"}".utf8), on: connection)
             return
         }
@@ -308,21 +368,27 @@ public final class TeamBridgeServer: @unchecked Sendable {
         })
     }
 
-    private struct ParsedHTTPRequest {
+    enum ParseResult {
+        case incomplete
+        case invalid
+        case complete(ParsedHTTPRequest)
+    }
+
+    struct ParsedHTTPRequest {
         var path: String
         var headers: [String: String]
         var body: Data
     }
 
-    private static func parseHTTPRequest(_ data: Data) -> ParsedHTTPRequest? {
+    static func parseHTTPRequest(_ data: Data) -> ParseResult {
         let separator = Data("\r\n\r\n".utf8)
-        guard let range = data.range(of: separator) else { return nil }
+        guard let range = data.range(of: separator) else { return .incomplete }
         let headerData = data[..<range.lowerBound]
         let headerText = String(decoding: headerData, as: UTF8.self)
         let lines = headerText.components(separatedBy: "\r\n")
-        guard let requestLine = lines.first else { return nil }
+        guard let requestLine = lines.first else { return .invalid }
         let parts = requestLine.split(separator: " ")
-        guard parts.count >= 2 else { return nil }
+        guard parts.count >= 2 else { return .invalid }
         let path = String(parts[1])
         var headers: [String: String] = [:]
         for line in lines.dropFirst() {
@@ -332,9 +398,17 @@ public final class TeamBridgeServer: @unchecked Sendable {
                 headers[key] = value
             }
         }
-        let contentLength = headers["content-length"].flatMap(Int.init) ?? 0
+        let contentLength: Int
+        if let rawLength = headers["content-length"] {
+            guard let parsed = Int(rawLength), parsed >= 0, parsed <= maxBodyBytes else {
+                return .invalid
+            }
+            contentLength = parsed
+        } else {
+            contentLength = 0
+        }
         let body = Data(data[range.upperBound...])
-        guard body.count >= contentLength else { return nil }
-        return ParsedHTTPRequest(path: path, headers: headers, body: body.prefix(contentLength))
+        guard body.count >= contentLength else { return .incomplete }
+        return .complete(ParsedHTTPRequest(path: path, headers: headers, body: body.prefix(contentLength)))
     }
 }

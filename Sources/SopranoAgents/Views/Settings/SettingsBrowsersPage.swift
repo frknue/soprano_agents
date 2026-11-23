@@ -80,6 +80,7 @@ extension SettingsController {
                 ),
             ]))
         } else {
+            var controlsByProfile: [String: (status: ThemedLabel, button: TextButton)] = [:]
             let profileRows = browsers.profiles.map { profile -> NSView in
                 let statusLabel = ThemedLabel("Checking…", size: Typography.smallSize, weight: .medium, role: { $0.mutedForeground })
                 let actionButton = form.button("Launch", size: .xs) { [weak self] in
@@ -87,32 +88,35 @@ extension SettingsController {
                     statusLabel.stringValue = "Launching…"
                     Task { @MainActor in
                         do {
-                            let status = try await engine.launchBrowserProfile(profile.id)
+                            let status = try await engine.launchBrowserProfile(profile.id, initialURL: "about:blank")
                             statusLabel.stringValue = status.isRunning ? (status.browserVersion ?? "Running") : "Started"
                         } catch {
                             statusLabel.stringValue = error.localizedDescription
                         }
                     }
                 }
-                Task { @MainActor [weak self, weak statusLabel, weak actionButton] in
-                    guard let engine = self?.engine else { return }
-                    let statuses = await engine.probeBrowserProfiles()
-                    guard let status = statuses.first(where: { $0.profileID == profile.id }),
-                          let statusLabel, let actionButton else { return }
-                    if status.isRunning {
-                        statusLabel.stringValue = status.browserVersion ?? "Running"
-                        actionButton.title = "Open tab"
-                    } else {
-                        statusLabel.stringValue = "Stopped"
-                        actionButton.title = "Launch"
-                    }
-                }
+                controlsByProfile[profile.id] = (statusLabel, actionButton)
                 let dataDir = (profile.resolvedUserDataDirectory() as NSString).abbreviatingWithTildeInPath
                 return form.row(
                     profile.label,
                     description: "\(profile.cdpURL) · \(dataDir)",
                     control: form.group([statusLabel, actionButton], spacing: 10)
                 )
+            }
+            let capturedControls = controlsByProfile
+            Task { @MainActor [weak self] in
+                guard let engine = self?.engine else { return }
+                let statuses = await engine.probeBrowserProfiles()
+                for status in statuses {
+                    guard let pair = capturedControls[status.profileID] else { continue }
+                    if status.isRunning {
+                        pair.status.stringValue = status.browserVersion ?? "Running"
+                        pair.button.title = "Open tab"
+                    } else {
+                        pair.status.stringValue = "Stopped"
+                        pair.button.title = "Launch"
+                    }
+                }
             }
             sections.append(form.section("Profiles", profileRows))
         }

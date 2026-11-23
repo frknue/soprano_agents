@@ -88,8 +88,12 @@ public enum ResourceCatalog {
 
     // MARK: - Provider projections
 
-    /// Shared MCP servers to inject into `provider` (respecting `settings.injectMcp` and avoiding
-    /// re-injecting `~/.omp/agent/mcp.json` servers back into `omp`).
+    /// Built-in MCP server names that repository-local MCP configs may never shadow.
+    public static let reservedBuiltInMCPNames: Set<String> = ["soprano-team", "soprano-browser"]
+
+    /// Shared MCP servers to inject into `provider` (respecting `settings.injectMcp`, gating
+    /// project-local MCP configs behind `settings.trustProjectMcp`, blocking repo shadowing of
+    /// built-in servers, and avoiding re-injecting `~/.omp/agent/mcp.json` back into `omp`).
     public static func mcpServers(
         from resources: ResolvedResources,
         for provider: ProviderKind,
@@ -99,6 +103,10 @@ public enum ResourceCatalog {
         guard settings.injectMcp, provider.capabilities.supportsMCPInjection else { return [] }
         let ompRoot = standardized((home as NSString).appendingPathComponent(".omp/agent"))
         return resources.mcpServers.compactMap { entry in
+            if entry.source == .project {
+                guard settings.trustProjectMcp else { return nil }
+                if reservedBuiltInMCPNames.contains(entry.spec.name) { return nil }
+            }
             if provider == .omp, let origin = entry.originPath, standardized(origin).hasPrefix(ompRoot + "/") {
                 return nil
             }

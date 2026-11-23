@@ -16,19 +16,25 @@ public struct ResourceSettings: Sendable, Hashable {
     public var injectInstructions: Bool
     /// Pass resolved shared MCP servers to sessions that support MCP injection.
     public var injectMcp: Bool
+    /// Opt-in trust for repository-local MCP configs (`<cwd>/.mcp.json`, `.agents/mcp.json`,
+    /// `.soprano-agents/mcp.json`). Disabled by default so untrusted repositories never execute
+    /// commands automatically.
+    public var trustProjectMcp: Bool
 
     public init(
         extraDirectories: [String] = [],
         importMcpFiles: [String] = [],
         mcpServers: [MCPServerSpec] = [],
         injectInstructions: Bool = true,
-        injectMcp: Bool = true
+        injectMcp: Bool = true,
+        trustProjectMcp: Bool = false
     ) {
         self.extraDirectories = extraDirectories
         self.importMcpFiles = importMcpFiles
         self.mcpServers = mcpServers
         self.injectInstructions = injectInstructions
         self.injectMcp = injectMcp
+        self.trustProjectMcp = trustProjectMcp
     }
 }
 

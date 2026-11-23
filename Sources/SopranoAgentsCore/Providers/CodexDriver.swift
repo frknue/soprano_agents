@@ -123,37 +123,6 @@ public struct CodexDriver: ProviderDriver {
                 throw ProviderError.invalidOutput("Codex did not return a thread id for text generation.")
             }
 
-            let reader = Task { () throws -> String in
-                var streamed = ""
-                var finalText: String?
-                for await message in client.incoming {
-                    switch message {
-                    case let .notification("item/agentMessage/delta", params):
-                        if let delta = params["delta"]?.stringValue { streamed += delta }
-                    case let .notification("item/completed", params):
-                        if params["item"]?["type"]?.stringValue == "agentMessage",
-                           let text = params["item"]?["text"]?.nonEmptyString {
-                            finalText = text
-                        }
-                    case let .notification("turn/completed", params):
-                        let turn = params["turn"] ?? .null
-                        if turn["status"]?.stringValue == "failed" {
-                            let message = turn["error"]?["message"]?.nonEmptyString ?? "Codex text generation failed."
-                            throw ProviderError.message(message)
-                        }
-                        return finalText ?? streamed
-                    case let .request(rpcID, _, _):
-                        try? await client.respond(to: rpcID, result: CodexProtocol.approvalResponse(.decline))
-                    case let .closed(status, stderr):
-                        throw ProviderError.processExited(.codex, status: status, stderr: stderr)
-                    default:
-                        break
-                    }
-                }
-                throw ProviderError.notStarted
-            }
-            defer { reader.cancel() }
-
             let promptText = ProviderPrompt.generationPrompt(prompt, schema: schema)
             var turnParams: [String: JSONValue] = [
                 "threadId": .string(threadID),
@@ -166,8 +135,51 @@ public struct CodexDriver: ProviderDriver {
             if model != ModelSelection.configuredDefaultModel {
                 turnParams["model"] = .string(model)
             }
-            _ = try await client.request("turn/start", .object(turnParams))
-            return try await reader.value
+            let requestParams = JSONValue.object(turnParams)
+
+            // Start turn/start concurrently inside a structured task group so cancelling
+            // `withProviderTimeout` cancels both the reader and the RPC immediately.
+            return try await withThrowingTaskGroup(of: String?.self) { group in
+                group.addTask {
+                    var streamed = ""
+                    var finalText: String?
+                    for await message in client.incoming {
+                        try Task.checkCancellation()
+                        switch message {
+                        case let .notification("item/agentMessage/delta", params):
+                            if let delta = params["delta"]?.stringValue { streamed += delta }
+                        case let .notification("item/completed", params):
+                            if params["item"]?["type"]?.stringValue == "agentMessage",
+                               let text = params["item"]?["text"]?.nonEmptyString {
+                                finalText = text
+                            }
+                        case let .notification("turn/completed", params):
+                            let turn = params["turn"] ?? .null
+                            if turn["status"]?.stringValue == "failed" {
+                                let message = turn["error"]?["message"]?.nonEmptyString ?? "Codex text generation failed."
+                                throw ProviderError.message(message)
+                            }
+                            return finalText ?? streamed
+                        case let .request(rpcID, _, _):
+                            try? await client.respond(to: rpcID, result: CodexProtocol.approvalResponse(.decline))
+                        case let .closed(status, stderr):
+                            throw ProviderError.processExited(.codex, status: status, stderr: stderr)
+                        default:
+                            break
+                        }
+                    }
+                    throw ProviderError.notStarted
+                }
+                group.addTask {
+                    _ = try await client.request("turn/start", requestParams)
+                    return nil
+                }
+                defer { group.cancelAll() }
+                for try await result in group {
+                    if let text = result { return text }
+                }
+                throw ProviderError.notStarted
+            }
         }
         return try ProviderPrompt.firstJSONObject(in: text)
     }
@@ -222,10 +234,14 @@ public struct CodexDriver: ProviderDriver {
         }
         let client = AcpClient(transport: process, kind: .codex)
         defer { process.terminate() }
-        return try await withProviderTimeout(timeout, label: label) {
-            _ = try await client.request("initialize", CodexProtocol.initializeParams)
-            try await client.notify("initialized")
-            return try await body(client)
+        return try await withTaskCancellationHandler {
+            try await withProviderTimeout(timeout, label: label) {
+                _ = try await client.request("initialize", CodexProtocol.initializeParams)
+                try await client.notify("initialized")
+                return try await body(client)
+            }
+        } onCancel: {
+            process.terminate()
         }
     }
 }

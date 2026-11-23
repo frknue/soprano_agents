@@ -77,7 +77,8 @@ extension AgentEngine {
         if let fallbackTask = rt.sideQuestionTask {
             fallbackTask.cancel()
             rt.sideQuestionTask = nil
-            interruptSideQuestions(threadID)
+            rt.sideQuestionTaskID = nil
+            markRunningSideQuestionsInterrupted(threadID)
             return true
         }
         let starting = rt.isAskingSideQuestion
@@ -142,10 +143,13 @@ extension AgentEngine {
 
         let exchange = SideQuestionExchange(question: question, answer: "", status: .running, createdAt: now, updatedAt: now)
         let record: SideQuestion
+        let targetExchangeIndex: Int
         if let topicID, var existing = rt.sideQuestions.first(where: { $0.id == topicID }) {
             existing.followUps.append(exchange)
+            targetExchangeIndex = existing.followUps.count // 0 = first, 1... = followUps[index-1]
             record = existing
         } else {
+            targetExchangeIndex = 0
             record = SideQuestion(id: topicID ?? UUID().uuidString, first: exchange)
         }
         upsertSideQuestion(record, threadID: threadID)
@@ -165,11 +169,14 @@ extension AgentEngine {
         let prompt = Self.fallbackSideQuestionPrompt(thread: thread, topic: record, question: question)
         let cwd = workingDirectory(for: thread)
         let topicKey = record.id
+        let taskID = UUID()
+        rt.sideQuestionTaskID = taskID
 
         rt.sideQuestionTask = runtime.track { [self] in
             defer {
-                if runtime.existingThread(threadID)?.sideQuestionTask != nil {
-                    runtime.existingThread(threadID)?.sideQuestionTask = nil
+                if let existing = runtime.existingThread(threadID), existing.sideQuestionTaskID == taskID {
+                    existing.sideQuestionTask = nil
+                    existing.sideQuestionTaskID = nil
                 }
             }
             do {
@@ -181,35 +188,46 @@ extension AgentEngine {
                 )
                 guard !Task.isCancelled else { return }
                 let answer = json["answer"]?.stringValue?.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines) ?? ""
-                updateSideQuestionLatest(threadID: threadID, topicID: topicKey) { latest in
-                    latest.answer = answer.isEmpty ? "(No answer returned.)" : answer
-                    latest.status = .complete
-                    latest.updatedAt = environment.now()
+                updateSideQuestionExchange(threadID: threadID, topicID: topicKey, exchangeIndex: targetExchangeIndex) { item in
+                    guard item.status == .running else { return }
+                    item.answer = answer.isEmpty ? "(No answer returned.)" : answer
+                    item.status = .complete
+                    item.updatedAt = environment.now()
                 }
             } catch is CancellationError {
-                updateSideQuestionLatest(threadID: threadID, topicID: topicKey) { latest in
-                    latest.status = .interrupted
-                    latest.updatedAt = environment.now()
+                updateSideQuestionExchange(threadID: threadID, topicID: topicKey, exchangeIndex: targetExchangeIndex) { item in
+                    guard item.status == .running else { return }
+                    item.status = .interrupted
+                    item.updatedAt = environment.now()
                 }
             } catch {
-                updateSideQuestionLatest(threadID: threadID, topicID: topicKey) { latest in
-                    latest.status = .failed
-                    latest.error = Self.describe(error)
-                    latest.updatedAt = environment.now()
+                guard !Task.isCancelled else { return }
+                updateSideQuestionExchange(threadID: threadID, topicID: topicKey, exchangeIndex: targetExchangeIndex) { item in
+                    guard item.status == .running else { return }
+                    item.status = .failed
+                    item.error = Self.describe(error)
+                    item.updatedAt = environment.now()
                 }
             }
         }
         return record.id
     }
 
-    private func updateSideQuestionLatest(
+    private func updateSideQuestionExchange(
         threadID: String,
         topicID: String,
+        exchangeIndex: Int,
         mutate: (inout SideQuestionExchange) -> Void
     ) {
         guard let rt = runtime.existingThread(threadID),
               let index = rt.sideQuestions.firstIndex(where: { $0.id == topicID }) else { return }
-        mutate(&rt.sideQuestions[index].latest)
+        if exchangeIndex == 0 {
+            mutate(&rt.sideQuestions[index].first)
+        } else if exchangeIndex - 1 < rt.sideQuestions[index].followUps.count {
+            mutate(&rt.sideQuestions[index].followUps[exchangeIndex - 1])
+        } else {
+            return
+        }
         savePersistedSideQuestions(rt.sideQuestions, threadID: threadID)
         emit(.sideQuestionsChanged(threadID: threadID))
     }
@@ -310,8 +328,14 @@ extension AgentEngine {
         emit(.sideQuestionsChanged(threadID: threadID))
     }
 
-    /// The session ended: a side question still running went with it.
+    /// The session ended: a provider-backed side question still running went with it. Engine-level
+    /// fallback side questions do not use the session and keep running.
     func interruptSideQuestions(_ threadID: String) {
+        guard let rt = runtime.existingThread(threadID), rt.sideQuestionTask == nil else { return }
+        markRunningSideQuestionsInterrupted(threadID)
+    }
+
+    private func markRunningSideQuestionsInterrupted(_ threadID: String) {
         guard let rt = runtime.existingThread(threadID), rt.sideQuestions.contains(where: \.isRunning) else { return }
         let now = environment.now()
         for index in rt.sideQuestions.indices where rt.sideQuestions[index].isRunning {

@@ -11,13 +11,14 @@ struct CrossProviderParityTests {
         defer { try? FileManager.default.removeItem(at: root) }
         let store = TeammateMemoryStore(databaseURL: root.appendingPathComponent("memory/soprano-memory.db"))
 
-        let first = try store.retain(content: "Always use CDP over loopback 127.0.0.1, never embed WebKit.", tags: ["architecture", "browser"])
+        let first = try store.retain(content: "Always use CDP over loopback 127.0.0.1, never embed WebKit.", tags: ["architecture,browser", "cdp"])
         _ = try store.retain(content: "Deployments run on Friday mornings with canary rollout.", tags: ["ops"])
         #expect(first.id > 0)
 
         let recalled = try store.recall(query: "webkit browser cdp")
         #expect(recalled.count == 1)
         #expect(recalled[0].content.contains("127.0.0.1"))
+        #expect(recalled[0].tags == ["architecture,browser", "cdp"])
 
         let recent = try store.recall(query: "")
         #expect(recent.count == 2)
@@ -235,6 +236,69 @@ struct CrossProviderParityTests {
         #expect(groups.contains { $0.provider == "codex" && $0.totals.inputTokens == 2000 && $0.totals.cost > 0 })
         #expect(groups.contains { $0.provider == "claude" && $0.totals.inputTokens == 3000 && $0.totals.cost > 0 })
         #expect(!groups.contains { $0.provider == "omp" })
+    }
+
+    // MARK: - Security & Spontaneous Background Wakeup Regression Tests
+
+    @Test func teamBridgeRejectsNegativeContentLengthAndIsolatesPerThreadTokens() {
+        let malicious = Data("POST /tools/call HTTP/1.1\r\nContent-Length: -1\r\n\r\n{}".utf8)
+        if case .invalid = TeamBridgeServer.parseHTTPRequest(malicious) {
+            // Expected: rejected safely before trapping on prefix(-1).
+        } else {
+            Issue.record("Expected negative Content-Length to parse as .invalid")
+        }
+
+        let server = TeamBridgeServer(listHandler: { _ in [] }, callHandler: { _, _, _ in HostToolResult(text: "") })
+        let tokenA = server.token(for: "thread-a")
+        let tokenB = server.token(for: "thread-b")
+        #expect(tokenA != tokenB)
+        #expect(server.token(for: "thread-a") == tokenA)
+        server.revokeToken(for: "thread-a")
+        #expect(server.token(for: "thread-a") != tokenA)
+    }
+
+    @Test @MainActor func spontaneousBackgroundWakeupReopensCompletedTurnAndDeliversReply() async throws {
+        let dataDir = FileManager.default.temporaryDirectory.appendingPathComponent("wakeup-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: dataDir) }
+
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        var thread = AgentThread(id: "agy-1", projectID: nil, title: "Background task", createdAt: now, modelSelection: .default(for: .antigravity))
+        thread.turns = [
+            Turn(
+                ordinal: 1,
+                userMessage: UserMessage(text: "Run review in background", createdAt: now),
+                modelSelection: .default(for: .antigravity),
+                status: .completed,
+                startedAt: now,
+                completedAt: now,
+                items: [TurnItem(id: "t1/message-1", kind: .assistantMessage(text: "Started review.", isFinal: true), status: .completed)]
+            ),
+        ]
+
+        let env = EngineEnvironment(
+            drivers: [:],
+            git: FixtureGitService(),
+            store: InMemoryThreadStore(StoreSnapshot(threads: [thread])),
+            dataDirectory: dataDir
+        )
+        let engine = AgentEngine(environment: env, settings: EngineSettings())
+
+        // Simulate Antigravity waking up from a background task after turn 1 already completed.
+        engine.apply(.turnResumed, threadID: "agy-1")
+        #expect(engine.thread("agy-1")?.isRunning == true)
+
+        engine.apply(.assistantDelta(itemID: "t2/message-1", delta: "Review finished: 4 blockers found.", isFinal: true), threadID: "agy-1")
+        engine.apply(.turnCompleted(outcome: .completed, error: nil), threadID: "agy-1")
+
+        let finalThread = try #require(engine.thread("agy-1"))
+        #expect(!finalThread.isRunning)
+        #expect(finalThread.turns.last?.status == .completed)
+        let messages = finalThread.turns.last?.items.compactMap { item -> String? in
+            if case let .assistantMessage(text, _) = item.kind { return text }
+            return nil
+        } ?? []
+        #expect(messages.contains("Started review."))
+        #expect(messages.contains("Review finished: 4 blockers found."))
     }
 }
 

@@ -189,7 +189,7 @@ enum SettingsResolver {
         }
 
         if let resources = section("resources", in: root, warn: warn) {
-            let known: Set<String> = ["extraDirectories", "importMcpFiles", "injectInstructions", "injectMcp"]
+            let known: Set<String> = ["extraDirectories", "importMcpFiles", "injectInstructions", "injectMcp", "trustProjectMcp"]
             for key in resources.keys.sorted() where !known.contains(key) {
                 warn("Unknown setting \"resources.\(key)\".")
             }
@@ -213,6 +213,9 @@ enum SettingsResolver {
             if let value = resources["injectMcp"] {
                 if let flag = value as? Bool { result.settings.resources.injectMcp = flag } else { warn("resources.injectMcp must be true or false.") }
             }
+            if let value = resources["trustProjectMcp"] {
+                if let flag = value as? Bool { result.settings.resources.trustProjectMcp = flag } else { warn("resources.trustProjectMcp must be true or false.") }
+            }
         }
 
         if let mcp = section("mcpServers", in: root, warn: warn) {
@@ -226,7 +229,12 @@ enum SettingsResolver {
                     warn("mcpServers.\(name) must be an MCP server object.")
                 }
             }
-            result.settings.resources.mcpServers = ResourceCatalog.parseMCPDictionary(mapped)
+            let parsed = ResourceCatalog.parseMCPDictionary(mapped)
+            let parsedNames = Set(parsed.map(\.name))
+            for name in mapped.keys.sorted() where !parsedNames.contains(name) {
+                warn("mcpServers.\(name) must specify \"command\" or \"url\".")
+            }
+            result.settings.resources.mcpServers = parsed
         }
 
         if let browsers = section("browsers", in: root, warn: warn) {
@@ -291,6 +299,7 @@ enum SettingsResolver {
                 if let entries = value as? [Any] {
                     var profiles: [BrowserProfile] = []
                     var seenIDs: Set<String> = []
+                    var seenPorts: Set<Int> = []
                     for (index, raw) in entries.enumerated() {
                         guard let obj = raw as? [String: Any],
                               let id = (obj["id"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !id.isEmpty,
@@ -303,7 +312,11 @@ enum SettingsResolver {
                             warn("Duplicate browser profile id \"\(id)\".")
                             continue
                         }
+                        if seenPorts.contains(port) {
+                            warn("Duplicate browser profile port \(port) on profile \"\(id)\".")
+                        }
                         seenIDs.insert(id)
+                        seenPorts.insert(port)
                         let label = obj["label"] as? String
                         let userDataDir = obj["userDataDirectory"] as? String
                         let binaryPath = obj["binaryPath"] as? String
@@ -324,6 +337,7 @@ enum SettingsResolver {
             }
             if let value = browsers["rules"] {
                 if let entries = value as? [Any] {
+                    let knownProfiles = Set(result.settings.browsers.profiles.map(\.id))
                     var rules: [BrowserMatchRule] = []
                     for (index, raw) in entries.enumerated() {
                         guard let obj = raw as? [String: Any],
@@ -332,6 +346,9 @@ enum SettingsResolver {
                         else {
                             warn("browsers.rules[\(index)] must specify \"profile\".")
                             continue
+                        }
+                        if !knownProfiles.isEmpty && !knownProfiles.contains(profileID) {
+                            warn("browsers.rules[\(index)] references unknown profile \"\(profileID)\".")
                         }
                         let pathPrefixes = (obj["pathPrefixes"] as? [Any])?.compactMap { $0 as? String } ?? []
                         let gitRemoteSubstrings = (obj["gitRemoteSubstrings"] as? [Any])?.compactMap { $0 as? String } ?? []
@@ -347,6 +364,11 @@ enum SettingsResolver {
                 } else {
                     warn("browsers.rules must be an array of match rule objects.")
                 }
+            }
+            if let defaultID = result.settings.browsers.defaultProfile,
+               !result.settings.browsers.profiles.isEmpty,
+               !result.settings.browsers.profiles.contains(where: { $0.id == defaultID }) {
+                warn("browsers.defaultProfile \"\(defaultID)\" does not match any configured profile.")
             }
         }
 

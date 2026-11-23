@@ -13,6 +13,8 @@ export const store = {
   terminals: new Map(),
   /** threadID → { items: [SideQuestion], starting: boolean } from `/side-questions` and SSE. */
   sideQuestions: new Map(),
+  /** Last threadID whose side questions changed (so other threads don't rebuild an active input). */
+  lastSideQuestionsThreadID: null,
   /** 'connecting' | 'open' | 'closed' */
   connection: 'connecting',
 };
@@ -157,6 +159,7 @@ export function applyEvent(name, data) {
       break;
     case 'sideQuestions':
       store.sideQuestions.set(data.threadID, { items: data.sideQuestions ?? [], starting: Boolean(data.starting) });
+      store.lastSideQuestionsThreadID = data.threadID;
       emit('sideQuestions');
       break;
     default:

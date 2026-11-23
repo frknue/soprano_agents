@@ -338,6 +338,9 @@ extension SettingsController {
         let injectMcp = form.toggle(settings.resources.injectMcp, label: "Share MCP servers") { [weak self] isOn in
             self?.write(isOn, at: ["resources", "injectMcp"])
         }
+        let trustProjectMcp = form.toggle(settings.resources.trustProjectMcp, label: "Trust project MCP configs") { [weak self] isOn in
+            self?.write(isOn, at: ["resources", "trustProjectMcp"])
+        }
 
         let discovered = engine.resolvedResources()
         var sections: [NSView] = [
@@ -365,6 +368,12 @@ extension SettingsController {
                     description: "Pass discovered and inline MCP servers to sessions that support MCP injection.",
                     reset: reset(["resources", "injectMcp"], isDefault: settings.resources.injectMcp == defaults.resources.injectMcp),
                     control: injectMcp
+                ),
+                form.row(
+                    "Trust project MCP configs",
+                    description: "Opt in to running repository-local .mcp.json / .agents/mcp.json servers automatically. Leave off when opening untrusted repositories.",
+                    reset: reset(["resources", "trustProjectMcp"], isDefault: settings.resources.trustProjectMcp == defaults.resources.trustProjectMcp),
+                    control: trustProjectMcp
                 ),
             ]),
         ]
