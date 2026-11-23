@@ -58,14 +58,16 @@ struct ComposerModelChoiceTests {
         #expect(ModelChoice.lockReason(.omp, lockedTo: nil) == nil)
     }
 
-    @Test func teammatesStayOnOmpEvenWithoutTurns() {
+    @Test func teammatesCanPickAnyProviderUntilTheirFirstTurn() {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
-        var thread = AgentThread(id: "cto", projectID: nil, title: "CTO", createdAt: now, modelSelection: ModelSelection(provider: .omp, model: "anthropic/claude-opus-5-5"))
+        var thread = AgentThread(id: "cto", projectID: nil, title: "CTO", createdAt: now, modelSelection: ModelSelection(provider: .claude, model: "claude-opus-4-6"))
         thread.teammate = Teammate(name: "CTO", handle: "cto", role: "", instructions: "")
+        #expect(ModelChoice.lockedProvider(of: thread) == nil)
+        thread.turns = [Turn(ordinal: 1, userMessage: UserMessage(text: "Hi", createdAt: now), modelSelection: thread.modelSelection, status: .completed, startedAt: now)]
         let locked = ModelChoice.lockedProvider(of: thread)
-        #expect(locked == .omp)
-        #expect(ModelChoice.lockReason(.opencode, lockedTo: locked, teammate: true) == "Teammates run on omp.")
-        #expect(ModelChoice.lockReason(.omp, lockedTo: locked, teammate: true) == nil)
+        #expect(locked == .claude)
+        #expect(ModelChoice.lockReason(.codex, lockedTo: locked, teammate: true) == "This teammate runs on Claude Code; create a new teammate to use Codex.")
+        #expect(ModelChoice.lockReason(.claude, lockedTo: locked, teammate: true) == nil)
     }
 
     @Test func unknownOptionsAndInvalidValuesAreDropped() {

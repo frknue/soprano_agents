@@ -316,13 +316,13 @@ struct EngineTeamTests {
         #expect(Teammate.suggestedHandle(from: "Ärztin #2") == "arztin-2")
     }
 
-    @Test func teammatesStayOnOmp() throws {
+    @Test func teammatesCanSwitchProvidersAndStayOutOfInbox() throws {
         let engine = EngineHarness.engine()
         let cto = try teammate(engine, "CTO", handle: "cto")
 
         engine.setModelSelection(cto, .default(for: .opencode))
 
-        #expect(engine.thread(cto)?.modelSelection.provider == .omp)
+        #expect(engine.thread(cto)?.modelSelection.provider == .opencode)
         #expect(InboxSection.of(try #require(engine.thread(cto))) == nil)
     }
 

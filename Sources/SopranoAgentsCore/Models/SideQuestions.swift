@@ -1,6 +1,6 @@
 import Foundation
 
-public enum SideQuestionStatus: String, Sendable, Hashable {
+public enum SideQuestionStatus: String, Codable, Sendable, Hashable {
     case running
     case complete
     case cancelled
@@ -10,7 +10,7 @@ public enum SideQuestionStatus: String, Sendable, Hashable {
 }
 
 /// One question of a side question and its answer.
-public struct SideQuestionExchange: Sendable, Hashable {
+public struct SideQuestionExchange: Codable, Sendable, Hashable {
     public var question: String
     /// Streamed text; partial while `.running`.
     public var answer: String
@@ -33,7 +33,7 @@ public struct SideQuestionExchange: Sendable, Hashable {
 /// conversation's context, with no tools, and neither the question nor the answer joins the
 /// conversation. A topic can take follow-ups, which see its earlier exchanges. The provider keeps
 /// the history (omp: the session's BTW sidecar); the engine holds what it reported this run.
-public struct SideQuestion: Sendable, Hashable, Identifiable {
+public struct SideQuestion: Codable, Sendable, Hashable, Identifiable {
     /// The provider's topic id.
     public var id: String
     /// The question that opened the topic.

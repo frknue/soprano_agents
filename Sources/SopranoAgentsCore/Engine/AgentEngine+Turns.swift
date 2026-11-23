@@ -148,6 +148,10 @@ extension AgentEngine {
         }
         guard let thread = thread(threadID) else { throw EngineError.unknownThread(threadID) }
         guard isWanted() else { return }
+        if let reviewRequest = try CrossProviderWorkflows.parseReviewCommand(message.text) {
+            try await runManualReview(threadID, request: reviewRequest)
+            return
+        }
         if Self.isCompaction(message) { try checkCompaction(thread, mode: mode) }
         if thread.isRunning {
             switch mode {
@@ -396,6 +400,7 @@ extension AgentEngine {
             }
         }
         removeThreadRecord(threadID)
+        removePersistedSideQuestions(threadID)
         if let teammate = thread.teammate { teammateDeleted(threadID, teammate) }
 
         let git = environment.git
@@ -466,6 +471,8 @@ extension AgentEngine {
         for assistant in environment.textAssistants.values {
             await assistant.close()
         }
+        runtime.teamBridge?.stop()
+        runtime.teamBridge = nil
         await runtime.waitForQuitWork()
         environment.store.flush()
     }

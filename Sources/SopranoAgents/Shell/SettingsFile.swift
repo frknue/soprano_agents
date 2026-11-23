@@ -171,6 +171,19 @@ enum SettingsFile {
             ]
           },
 
+          "workflows": {
+            // Opt-in cross-provider post-turn advisor review (runs after turns that change files).
+            "advisorEnabled": false,
+            // Reviewer provider ("omp", "codex", "claude", "antigravity", "opencode"); omit for textGeneration.provider.
+            // "advisorProvider": "codex",
+            // Reviewer model slug; omit for that provider's configured default model.
+            // "advisorModel": "gpt-5.4",
+            // Optional custom checklist or criteria for advisor reviews.
+            // "advisorPrompt": "Check for regressions, missing tests, and security issues.",
+            // Opt-in bullet recap card appended after turns that change files.
+            "autoRecapEnabled": false
+          },
+
           "chat": {
             // Sending while the agent works: "steer" the running turn or "queue" after it. ⌘↩ does the other.
             "followUp": "steer",

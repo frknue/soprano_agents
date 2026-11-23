@@ -206,11 +206,10 @@ public final class AgentEngine {
 
     /// A provider switch also forgets the old provider's conversation id and context fill: the
     /// new CLI cannot resume another provider's conversation. Its live session closes when the
-    /// next message starts the new provider's (`ensureSession`). Teammates stay on omp (the team
-    /// tools are omp's); their omp export follows the model.
+    /// next message starts the new provider's (`ensureSession`). Teammates may run on any provider;
+    /// their omp export follows the model when applicable.
     public func setModelSelection(_ threadID: String, _ selection: ModelSelection) {
         guard let current = thread(threadID) else { return }
-        if current.teammate != nil, selection.provider != .omp { return }
         updateThread(threadID) { thread in
             if thread.modelSelection.provider != selection.provider {
                 thread.providerThreadID = nil

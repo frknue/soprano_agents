@@ -26,6 +26,22 @@ All notable changes to Soprano Agents are documented here. The format follows
   titles, branch names and commit messages; `providers.opencodePath` if `opencode` is not on
   `PATH`. Settings → Providers shows each agent's status. Statistics, Accounts and word
   completion stay omp's.
+- Cross-provider parity for Team, Side Questions (`/btw`), Workflows and Usage Statistics:
+  - **Team & Teammates across all providers**: teammates can now run on `omp`, Codex, Claude Code,
+    Antigravity or OpenCode (pick any provider before the first turn), and non-`omp` sessions
+    access `team_list`, `team_message`, `team_activity`, `team_create`, `team_update`,
+    `team_delete` plus portable SQLite long-term memory (`memory_retain`, `memory_recall`) through
+    an authenticated loopback bridge (`SopranoAgents mcp team`).
+  - **Provider-agnostic Side Questions (`/btw`)**: side questions now work on Codex, Claude Code
+    and Antigravity via an engine-level off-turn runner alongside native `/btw` on `omp` and
+    OpenCode, and side-question history persists per thread across restarts.
+  - **Cross-provider Workflows (**Settings › Workflows**, `workflows.*`)**: send
+    `/review-with <provider>[/<model>] [focus]` in any thread to review its diff with another
+    provider and attach an advisory card, or opt into automatic post-turn advisor reviews
+    (`workflows.advisorEnabled`) and turn recaps (`workflows.autoRecapEnabled`).
+  - **Unified Usage Statistics**: completed and failed turns across all 5 providers are recorded in
+    a local JSONL ledger (`usage-ledger.jsonl`) and merged with `omp`'s `stats.db` (deduplicated)
+    in the Statistics board (`⇧⌘U`).
 - External Chromium CDP browser profiles & built-in CDP browser MCP (**Settings › Browsers**,
   `browsers.*`): define any Chromium-family profiles (Chrome, Chrome Beta, Chromium, Brave) with
   local CDP ports (`127.0.0.1:<port>`) and workspace routing rules (path prefixes, project names,

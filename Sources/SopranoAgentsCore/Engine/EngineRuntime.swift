@@ -27,6 +27,8 @@ final class EngineRuntime {
     var teamDeliveries: Set<String> = []
     /// Host tool calls being served, by `hostCallKey(thread, call id)`.
     var hostToolTasks: [String: Task<Void, Never>] = [:]
+    /// Loopback HTTP bridge serving Team & Memory MCP tools to non-omp provider sessions.
+    var teamBridge: TeamBridgeServer?
 
     func thread(_ id: String) -> ThreadRuntime {
         if let existing = threads[id] { return existing }
@@ -114,6 +116,8 @@ final class ThreadRuntime {
     var isAskingSideQuestion = false
     /// Stop was pressed while `isAskingSideQuestion`.
     var sideQuestionCancelRequested = false
+    /// Fallback engine-level side-question task (for providers without native `/btw`).
+    var sideQuestionTask: Task<Void, Never>?
     /// The teammate's persona or home changed: its next turn starts a new process (resuming
     /// the conversation) so the new launch settings apply.
     var relaunchRequested = false

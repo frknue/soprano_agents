@@ -155,10 +155,14 @@ extension AgentEngine {
         // A turn stopped before its provider turn started changed nothing worth a checkpoint.
         let capture = status == .completed || (status == .interrupted && ranAtProvider)
         let drain = status == .completed && !rt.holdQueue
+        recordTurnUsage(threadID: threadID, turnID: turnID, status: status)
         runtime.track(beforeQuit: capture) { [self] in
             if capture { await captureTurnCheckpoint(threadID, turnID) }
             // A teammate's reply names the files its turn changed.
             resolveTeamWaits(threadID)
+            if status == .completed {
+                await runPostTurnWorkflows(threadID: threadID, turnID: turnID)
+            }
             if drain { await drainQueue(threadID) }
         }
     }

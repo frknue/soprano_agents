@@ -92,6 +92,9 @@ struct AppSettings: Equatable, Sendable {
     /// Shared external Chromium/CDP browser profiles and routing rules.
     var browsers = BrowserSettings()
 
+    /// Opt-in cross-provider workflows (advisor review, auto-recap).
+    var workflows = WorkflowSettings()
+
     static let defaults = AppSettings()
 
     /// The engine's view of these settings.
@@ -111,7 +114,8 @@ struct AppSettings: Equatable, Sendable {
             opencodePath: opencodePath,
             antigravityPath: antigravityPath,
             resources: resources,
-            browsers: browsers
+            browsers: browsers,
+            workflows: workflows
         )
     }
 }

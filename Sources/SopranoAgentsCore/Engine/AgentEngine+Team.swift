@@ -33,11 +33,15 @@ extension AgentEngine {
 
     // MARK: Lifecycle
 
-    /// Creates a teammate: an empty thread on omp (the default omp model and runtime mode)
-    /// that carries it. Its home is the project's root, or its own folder.
+    /// Creates a teammate: an empty thread on the requested provider (or the app's default model
+    /// and runtime mode) that carries it. Its home is the project's root, or its own folder.
     public func createTeammate(_ draft: TeammateDraft) throws -> TeammateSaveResult {
         let teammate = try validatedTeammate(draft, threadID: nil)
-        let selection = settings.defaultModel.provider == .omp ? settings.defaultModel : .default(for: .omp)
+        let selection: ModelSelection = if let provider = draft.provider {
+            settings.defaultModel.provider == provider ? settings.defaultModel : .default(for: provider)
+        } else {
+            settings.defaultModel
+        }
         let thread = AgentThread(
             projectID: draft.projectID,
             title: teammate.name,
@@ -140,9 +144,23 @@ extension AgentEngine {
                 let home = (config.cwd as NSString).abbreviatingWithTildeInPath
                 promptParts.append(TeamTools.persona(teammate, home: home, hasMemory: true))
             }
-        } else if let teammate = thread.teammate {
-            let home = (config.cwd as NSString).abbreviatingWithTildeInPath
-            promptParts.append(TeamTools.persona(teammate, home: home, hasMemory: false))
+        } else {
+            if let teammate = thread.teammate {
+                let home = (config.cwd as NSString).abbreviatingWithTildeInPath
+                promptParts.append(TeamTools.persona(teammate, home: home, hasMemory: true))
+            }
+            if (!team.isEmpty || thread.teammate != nil),
+               let executable = environment.executablePath,
+               !config.mcpServers.contains(where: { $0.name == "soprano-team" }),
+               let bridge = ensureTeamBridge() {
+                config.mcpServers.append(MCPServerSpec(
+                    name: "soprano-team",
+                    transport: .stdio(
+                        command: executable,
+                        args: ["mcp", "team", "--endpoint", bridge.endpoint, "--token", bridge.token, "--thread", thread.id]
+                    )
+                ))
+            }
         }
 
         if settings.browsers.enabled {
@@ -247,6 +265,44 @@ extension AgentEngine {
         return TeamTools.definitions(others: others, callerIsTeammate: thread.teammate != nil)
     }
 
+    /// Team & portable long-term memory tools exposed to non-omp sessions over `TeamBridgeServer`.
+    func teamMCPDefinitions(for thread: AgentThread) -> [HostToolDefinition] {
+        var defs = teamToolDefinitions(for: thread)
+        if thread.teammate != nil {
+            defs.append(contentsOf: TeamTools.memoryDefinitions())
+        }
+        return defs
+    }
+
+    /// Starts the loopback Team MCP bridge lazily when a non-omp session needs team/memory tools.
+    private func ensureTeamBridge() -> (endpoint: String, token: String)? {
+        if let existing = runtime.teamBridge, let url = existing.endpoint {
+            return (url, existing.token)
+        }
+        let server = TeamBridgeServer(
+            listHandler: { [weak self] threadID in
+                await MainActor.run {
+                    guard let self, let thread = self.thread(threadID) else { return [] }
+                    return self.teamMCPDefinitions(for: thread)
+                }
+            },
+            callHandler: { [weak self] threadID, name, arguments in
+                guard let self else { return HostToolResult(text: "Engine is unavailable.", isError: true) }
+                return await MainActor.run {
+                    Task { @MainActor in
+                        await self.runHostTool(
+                            HostToolCall(id: UUID().uuidString, toolCallID: nil, name: name, arguments: arguments),
+                            threadID: threadID
+                        )
+                    }
+                }.value
+            }
+        )
+        guard let url = try? server.start() else { return nil }
+        runtime.teamBridge = server
+        return (url, server.token)
+    }
+
     /// The team changed: every live omp conversation gets the new tools. A session still starting
     /// syncs them itself before its first turn (`ensureSession`); this catches the moment after.
     func refreshTeamTools() {
@@ -344,8 +400,46 @@ extension AgentEngine {
             return teamUpdate(call.arguments)
         case TeamTools.delete where caller.teammate != nil:
             return await teamDelete(call.arguments, caller: caller)
+        case TeamTools.memoryRetain where caller.teammate != nil:
+            return retainTeammateMemory(call.arguments, threadID: threadID)
+        case TeamTools.memoryRecall where caller.teammate != nil:
+            return recallTeammateMemory(call.arguments, threadID: threadID)
         default:
             return HostToolResult(text: "Soprano Agents has no tool named \(call.name).", isError: true)
+        }
+    }
+
+    private func teammateMemoryStore(_ threadID: String) -> TeammateMemoryStore {
+        let db = teammateDirectory(threadID)
+            .appendingPathComponent("memory", isDirectory: true)
+            .appendingPathComponent("soprano-memory.db")
+        return TeammateMemoryStore(databaseURL: db)
+    }
+
+    private func retainTeammateMemory(_ arguments: JSONValue, threadID: String) -> HostToolResult {
+        let content = arguments["content"]?.stringValue ?? ""
+        let tags = arguments["tags"]?.arrayValue?.compactMap(\.stringValue) ?? []
+        do {
+            let entry = try teammateMemoryStore(threadID).retain(content: content, tags: tags, now: environment.now())
+            return HostToolResult(text: "Saved memory #\(entry.id).")
+        } catch {
+            return HostToolResult(text: Self.describe(error), isError: true)
+        }
+    }
+
+    private func recallTeammateMemory(_ arguments: JSONValue, threadID: String) -> HostToolResult {
+        let query = arguments["query"]?.stringValue ?? ""
+        let limit = arguments["limit"]?.intValue ?? 10
+        do {
+            let entries = try teammateMemoryStore(threadID).recall(query: query, limit: limit)
+            guard !entries.isEmpty else { return HostToolResult(text: "No matching memories found.") }
+            let lines = entries.map { entry -> String in
+                let tagPart = entry.tags.isEmpty ? "" : " [\(entry.tags.joined(separator: ", "))]"
+                return "- (#\(entry.id)\(tagPart)) \(entry.content)"
+            }
+            return HostToolResult(text: lines.joined(separator: "\n"))
+        } catch {
+            return HostToolResult(text: Self.describe(error), isError: true)
         }
     }
 

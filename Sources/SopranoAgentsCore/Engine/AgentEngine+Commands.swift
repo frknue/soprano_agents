@@ -19,39 +19,43 @@ extension AgentEngine {
     /// by `ResourceCatalog` (provider-native commands keep priority on duplicate `insertText`).
     public func commands(forThread threadID: String) -> [ProviderCommand] {
         guard let thread = thread(threadID) else { return [] }
-        let provider = thread.modelSelection.provider
         let cwd = workingDirectory(for: thread)
-        let native: [ProviderCommand]
-        if let live = runtime.existingThread(threadID)?.commands, live.provider == provider {
-            native = live.list
-        } else if let list = rememberedCommands(provider, directory: cwd) {
-            native = list
-        } else if let project = project(thread.projectID), let list = rememberedCommands(provider, directory: project.path) {
-            native = list
-        } else {
-            native = []
-        }
-        return mergeWithSharedCommands(native, directory: cwd)
+        return mergeWithSharedCommands(nativeCommands(forThread: thread), directory: cwd)
     }
 
     /// The last list `provider` reported this run for the project's root (a projectless draft:
     /// for any scratch workspace), merged with shared resources.
     public func commands(forDraft provider: ProviderKind, projectID: String?) -> [ProviderCommand] {
-        let directory: String
-        if let projectID {
-            guard let project = project(projectID) else { return [] }
-            directory = project.path
-        } else {
-            directory = scratchRoot.path
-        }
+        guard let directory = draftCommandDirectory(projectID: projectID) else { return [] }
         let native = rememberedCommands(provider, directory: directory) ?? []
         return mergeWithSharedCommands(native, directory: directory)
     }
 
+    private func nativeCommands(forThread thread: AgentThread) -> [ProviderCommand] {
+        let provider = thread.modelSelection.provider
+        let cwd = workingDirectory(for: thread)
+        if let live = runtime.existingThread(thread.id)?.commands, live.provider == provider {
+            return live.list
+        } else if let list = rememberedCommands(provider, directory: cwd) {
+            return list
+        } else if let project = project(thread.projectID), let list = rememberedCommands(provider, directory: project.path) {
+            return list
+        }
+        return []
+    }
+
+    private func draftCommandDirectory(projectID: String?) -> String? {
+        if let projectID {
+            return project(projectID)?.path
+        }
+        return scratchRoot.path
+    }
+
     private func mergeWithSharedCommands(_ native: [ProviderCommand], directory: String) -> [ProviderCommand] {
         let shared = ResourceCatalog.composerCommands(from: resolvedResources(forDirectory: directory))
-        guard !shared.isEmpty else { return native }
-        return ProviderCommand.normalized(native + shared)
+        let builtIn = environment.resourceHome != nil ? CrossProviderWorkflows.builtInCommands : []
+        guard !shared.isEmpty || !builtIn.isEmpty else { return native }
+        return ProviderCommand.normalized(native + shared + builtIn)
     }
 
     /// Expands a leading `/<command>` or `/skill:<name>` from shared resources when the thread's
@@ -91,7 +95,7 @@ extension AgentEngine {
     /// provider and workspace is asked once per run, answered or not; nothing happens when a list
     /// is known or the thread has a session of its provider (it reports its own list).
     public func loadCommands(forThread threadID: String) {
-        guard let thread = thread(threadID), commands(forThread: threadID).isEmpty,
+        guard let thread = thread(threadID), nativeCommands(forThread: thread).isEmpty,
               runtime.existingThread(threadID)?.session?.kind != thread.modelSelection.provider else { return }
         readCommands(thread.modelSelection.provider, directory: workingDirectory(for: thread))
     }
@@ -99,13 +103,9 @@ extension AgentEngine {
     /// `loadCommands(forThread:)` for a draft: the project's root (a projectless draft: the
     /// scratch root, where omp falls back to its global commands and skills).
     public func loadCommands(forDraft provider: ProviderKind, projectID: String?) {
-        guard commands(forDraft: provider, projectID: projectID).isEmpty else { return }
-        if let projectID {
-            guard let project = project(projectID) else { return }
-            readCommands(provider, directory: project.path)
-        } else {
-            readCommands(provider, directory: scratchRoot.path)
-        }
+        guard let directory = draftCommandDirectory(projectID: projectID),
+              (rememberedCommands(provider, directory: directory) ?? []).isEmpty else { return }
+        readCommands(provider, directory: directory)
     }
 
     // MARK: Compaction

@@ -94,19 +94,25 @@ The installer never restarts a running Soprano Agents; the update applies on the
 9. Several Claude and Codex accounts for omp, as in Soprano: the account button at the bottom of
    the sidebar (tinted near a limit; `⌘U` for details) and **Settings › Accounts** to add logins
    and let omp prefer one or balance across them.
-10. Statistics (`⇧⌘U`, or the chart button next to Settings), as in T3 Code's Usage page: omp's
-   tokens and estimated API-equivalent cost over 24h, 7d, 30d, 90d or all time, with a chart per
-   hour, day, week or month and breakdowns by model (click one to filter), project and agent. It reads
-   omp's own usage records (`omp stats`), so every omp session on this Mac counts.
-11. A team of long-lived omp agents: **New Teammate…** (the `+` on the sidebar's Team section,
-   or the command palette) gives one a name, a handle (`cto`), a role, standing instructions and a
-   home folder (a project or its own). A teammate is a conversation you keep coming back to;
-   your threads and other teammates message it by handle, and messages they sent read
-   "From CTO" / "From thread “…”" (click to open the sender). Optionally it is also written to
-   `~/.omp/agent/agents/<handle>.md`, so terminal omp can start a fresh copy of it. Right-click a
-   teammate for Edit / Delete Teammate…. Teammates can also add, change and delete teammates
-   themselves (ask your CTO for a frontend engineer); they appear in the Team section like ones
-   you created. Click the Team header to collapse the section.
+10. Statistics (`⇧⌘U`, or the chart button next to Settings), as in T3 Code's Usage page: tokens
+    and estimated API-equivalent cost across all 5 providers (`omp`, Codex, Claude Code,
+    Antigravity and OpenCode) over 24h, 7d, 30d, 90d or all time, with a chart per hour, day, week
+    or month and breakdowns by model (click one to filter), project and agent. It merges omp's own
+    usage records (`omp stats`) with Soprano Agents' local multi-provider usage ledger.
+11. A team of long-lived agents on any provider: **New Teammate…** (the `+` on the sidebar's Team
+    section, or the command palette) gives one a name, a handle (`cto`), a role, standing
+    instructions and a home folder (a project or its own). Pick any provider before its first turn.
+    A teammate is a conversation you keep coming back to; your threads and other teammates across
+    all 5 providers message it by handle, and messages they sent read "From CTO" / "From thread
+    “…”" (click to open the sender). Non-omp teammates get private SQLite long-term memory
+    (`memory_retain` / `memory_recall`) alongside omp's Mnemopi. Optionally it is also written to
+    `~/.omp/agent/agents/<handle>.md`, so terminal omp can start a fresh copy of it. Right-click a
+    teammate for Edit / Delete Teammate…. Teammates can also add, change and delete teammates
+    themselves (ask your CTO for a frontend engineer); they appear in the Team section like ones
+    you created. Click the Team header to collapse the section.
+12. Cross-provider workflows (**Settings › Workflows**): send `/review-with <provider>[/<model>]
+    [focus]` in any thread to ask another provider to review the thread's diff as an inline
+    advisory card, or opt into automatic post-turn advisor reviews and turn recaps.
 
 `⌘K` (or `⌘P`) opens the command palette, Soprano's own: every action with its shortcut, threads,
 projects and settings pages. When the app is in the background, finished, failed and

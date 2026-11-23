@@ -42,7 +42,7 @@ public struct SessionConfig: Sendable, Hashable {
 }
 
 /// A tool the app serves to the agent (omp `set_host_tools`).
-public struct HostToolDefinition: Sendable, Hashable {
+public struct HostToolDefinition: Codable, Sendable, Hashable {
     public var name: String
     public var label: String
     public var description: String

@@ -8,6 +8,7 @@ enum SettingsPage: String, CaseIterable, Sendable {
     case accounts
     case resources
     case browsers
+    case workflows
     case textGeneration = "text-generation"
     case worktrees
     case notifications
@@ -23,6 +24,7 @@ enum SettingsPage: String, CaseIterable, Sendable {
         case .accounts: "Accounts"
         case .resources: "Resources & MCP"
         case .browsers: "Browsers"
+        case .workflows: "Workflows"
         case .textGeneration: "Text generation"
         case .worktrees: "Worktrees"
         case .notifications: "Notifications"
@@ -41,6 +43,7 @@ enum SettingsPage: String, CaseIterable, Sendable {
         case .accounts: "person.2"
         case .resources: "puzzlepiece.extension"
         case .browsers: "globe"
+        case .workflows: "sparkles"
         case .textGeneration: "text.bubble"
         case .worktrees: Icon.gitBranch
         case .notifications: "bell"
@@ -71,6 +74,9 @@ enum SettingsPage: String, CaseIterable, Sendable {
         case .browsers:
             [("AI browsers", "browser chromium chrome brave cdp port profile mcp devtools"),
              ("Browser routing rules", "profile match rule path git remote resolver")]
+        case .workflows:
+            [("Post-turn advisor", "advisor review reviewer second opinion diff codex claude"),
+             ("Auto-recap", "recap summary bullets /review-with")]
         case .textGeneration:
             [("Text generation agent", "provider omp opencode"), ("Text generation model", "thread titles commit messages branch names"),
              ("Generate thread titles", "title")]

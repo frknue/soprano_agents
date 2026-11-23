@@ -86,6 +86,8 @@ enum EngineFactory {
         try? FileManager.default.createDirectory(at: dataDirectory, withIntermediateDirectories: true)
         executablePaths.update(settings)
         let paths = executablePaths
+        let ledger = LocalUsageLedger(fileURL: dataDirectory.appendingPathComponent("usage-ledger.jsonl"))
+        let ompUsage = OmpUsageStatistics(executablePath: { paths.omp })
         let environment = EngineEnvironment(
             drivers: [
                 .omp: OmpDriver(
@@ -106,7 +108,7 @@ enum EngineFactory {
             git: LiveGitService(),
             store: JSONFileThreadStore(directory: dataDirectory),
             dataDirectory: dataDirectory,
-            usage: OmpUsageStatistics(executablePath: { paths.omp }),
+            usage: CompositeUsageStatistics(omp: ompUsage, ledger: ledger),
             textAssistants: [
                 .omp: OmpTextAssistant(
                     executablePath: { paths.omp },
@@ -116,7 +118,8 @@ enum EngineFactory {
             ompAgentsDirectory: FileManager.default.homeDirectoryForCurrentUser
                 .appendingPathComponent(".omp/agent/agents", isDirectory: true),
             resourceHome: NSHomeDirectory(),
-            executablePath: Bundle.main.executablePath ?? ProcessInfo.processInfo.arguments.first
+            executablePath: Bundle.main.executablePath ?? ProcessInfo.processInfo.arguments.first,
+            usageLedger: ledger
         )
         return AgentEngine(environment: environment, settings: settings)
     }

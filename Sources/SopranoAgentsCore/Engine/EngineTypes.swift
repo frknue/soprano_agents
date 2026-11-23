@@ -142,6 +142,8 @@ public struct EngineSettings: Sendable, Hashable {
     public var resources: ResourceSettings
     /// Shared external Chromium/CDP browser profiles and routing rules.
     public var browsers: BrowserSettings
+    /// Opt-in cross-provider workflows (advisor review, auto-recap).
+    public var workflows: WorkflowSettings
 
     public init(
         defaultModel: ModelSelection = .default(for: .omp),
@@ -156,7 +158,8 @@ public struct EngineSettings: Sendable, Hashable {
         opencodePath: String? = nil,
         antigravityPath: String? = nil,
         resources: ResourceSettings = ResourceSettings(),
-        browsers: BrowserSettings = BrowserSettings()
+        browsers: BrowserSettings = BrowserSettings(),
+        workflows: WorkflowSettings = WorkflowSettings()
     ) {
         self.defaultModel = defaultModel
         self.defaultRuntimeMode = defaultRuntimeMode
@@ -171,6 +174,7 @@ public struct EngineSettings: Sendable, Hashable {
         self.antigravityPath = antigravityPath
         self.resources = resources
         self.browsers = browsers
+        self.workflows = workflows
     }
 }
 
@@ -273,6 +277,9 @@ public struct EngineEnvironment: Sendable {
     /// Path to the `SopranoAgents` executable for built-in stdio MCP subcommands (`mcp browser`,
     /// `mcp team`); nil in tests unless explicitly supplied.
     public var executablePath: String?
+    /// Local JSONL usage ledger recording completed turns across all 5 providers; nil in tests
+    /// unless explicitly supplied.
+    public var usageLedger: LocalUsageLedger?
     public var now: @Sendable () -> Date
 
     public init(
@@ -286,6 +293,7 @@ public struct EngineEnvironment: Sendable {
         ompAgentsDirectory: URL? = nil,
         resourceHome: String? = nil,
         executablePath: String? = nil,
+        usageLedger: LocalUsageLedger? = nil,
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.drivers = drivers
@@ -298,6 +306,7 @@ public struct EngineEnvironment: Sendable {
         self.ompAgentsDirectory = ompAgentsDirectory
         self.resourceHome = resourceHome
         self.executablePath = executablePath
+        self.usageLedger = usageLedger
         self.now = now
     }
 }

@@ -13,6 +13,8 @@ public enum TeamTools {
     public static let create = "team_create"
     public static let update = "team_update"
     public static let delete = "team_delete"
+    public static let memoryRetain = "memory_retain"
+    public static let memoryRecall = "memory_recall"
 
     /// Marker line in exported omp agent files; a file without it is never touched.
     static let exportMarker = "# soprano-agents-teammate:"
@@ -137,6 +139,40 @@ public enum TeamTools {
             ))
         }
         return tools
+    }
+
+    /// Portable long-term memory tools for non-omp teammates (backed by `TeammateMemoryStore`).
+    public static func memoryDefinitions() -> [HostToolDefinition] {
+        [
+            HostToolDefinition(
+                name: memoryRetain,
+                label: "Retain memory",
+                description: "Store a durable decision, preference, architecture fact, or lesson in your private long-term memory.",
+                parameters: [
+                    "type": "object",
+                    "properties": [
+                        "content": ["type": "string", "description": "The fact, decision or lesson to remember."],
+                        "tags": ["type": "array", "items": ["type": "string"], "description": "Optional short tags for filtering."],
+                    ],
+                    "required": ["content"],
+                    "additionalProperties": false,
+                ]
+            ),
+            HostToolDefinition(
+                name: memoryRecall,
+                label: "Recall memory",
+                description: "Search your private long-term memory for decisions, facts or prior context matching a query.",
+                parameters: [
+                    "type": "object",
+                    "properties": [
+                        "query": ["type": "string", "description": "Keywords or topic to recall (empty returns recent entries)."],
+                        "limit": ["type": "integer", "description": "Maximum number of memories to return (default 10)."],
+                    ],
+                    "required": [],
+                    "additionalProperties": false,
+                ]
+            ),
+        ]
     }
 
     // MARK: Teammate files

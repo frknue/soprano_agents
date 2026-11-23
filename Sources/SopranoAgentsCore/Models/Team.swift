@@ -101,14 +101,17 @@ public struct TeammateDraft: Sendable, Hashable {
     /// Home folder: a project's root; nil = the teammate's own folder in app data.
     public var projectID: String?
     public var exportsToOmp: Bool
+    /// Optional provider for a newly created teammate; nil uses the app's default provider.
+    public var provider: ProviderKind?
 
-    public init(name: String, handle: String, role: String, instructions: String, projectID: String?, exportsToOmp: Bool = true) {
+    public init(name: String, handle: String, role: String, instructions: String, projectID: String?, exportsToOmp: Bool = true, provider: ProviderKind? = nil) {
         self.name = name
         self.handle = handle
         self.role = role
         self.instructions = instructions
         self.projectID = projectID
         self.exportsToOmp = exportsToOmp
+        self.provider = provider
     }
 }
 

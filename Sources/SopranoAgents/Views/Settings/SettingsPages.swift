@@ -11,6 +11,7 @@ extension SettingsController {
         case .accounts: accountsPage(form)
         case .resources: resourcesPage(form)
         case .browsers: browsersPage(form)
+        case .workflows: workflowsPage(form)
         case .textGeneration: textGenerationPage(form)
         case .worktrees: worktreesPage(form)
         case .notifications: notificationsPage(form)

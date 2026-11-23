@@ -64,7 +64,7 @@ enum SettingsResolver {
             issues.append(ConfigIssue(severity: .warning, message: message))
         }
 
-        let knownTopLevel: Set<String> = ["theme", "agents", "providers", "textGeneration", "worktrees", "projects", "resources", "mcpServers", "browsers", "chat", "notifications", "remote", "editor", "keybindings"]
+        let knownTopLevel: Set<String> = ["theme", "agents", "providers", "textGeneration", "worktrees", "projects", "resources", "mcpServers", "browsers", "workflows", "chat", "notifications", "remote", "editor", "keybindings"]
         for key in root.keys.sorted() where !knownTopLevel.contains(key) {
             warn("Unknown setting \"\(key)\".")
         }
@@ -347,6 +347,46 @@ enum SettingsResolver {
                 } else {
                     warn("browsers.rules must be an array of match rule objects.")
                 }
+            }
+        }
+
+        if let workflows = section("workflows", in: root, warn: warn) {
+            let known: Set<String> = ["advisorEnabled", "advisorProvider", "advisorModel", "advisorPrompt", "autoRecapEnabled"]
+            for key in workflows.keys.sorted() where !known.contains(key) {
+                warn("Unknown setting \"workflows.\(key)\".")
+            }
+            if let value = workflows["advisorEnabled"] {
+                if let flag = value as? Bool { result.settings.workflows.advisorEnabled = flag } else { warn("workflows.advisorEnabled must be true or false.") }
+            }
+            if let value = workflows["advisorProvider"] {
+                if value is NSNull {
+                    result.settings.workflows.advisorProvider = nil
+                } else if let provider = providerKind(value) {
+                    result.settings.workflows.advisorProvider = provider
+                } else {
+                    warn("workflows.advisorProvider must be \(knownProviders).")
+                }
+            }
+            if let value = workflows["advisorModel"] {
+                if value is NSNull {
+                    result.settings.workflows.advisorModel = nil
+                } else if let model = value as? String, !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    result.settings.workflows.advisorModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
+                } else {
+                    warn("workflows.advisorModel must be a model id string.")
+                }
+            }
+            if let value = workflows["advisorPrompt"] {
+                if let prompt = value as? String {
+                    result.settings.workflows.advisorPrompt = prompt
+                } else if value is NSNull {
+                    result.settings.workflows.advisorPrompt = ""
+                } else {
+                    warn("workflows.advisorPrompt must be a string.")
+                }
+            }
+            if let value = workflows["autoRecapEnabled"] {
+                if let flag = value as? Bool { result.settings.workflows.autoRecapEnabled = flag } else { warn("workflows.autoRecapEnabled must be true or false.") }
             }
         }
 
