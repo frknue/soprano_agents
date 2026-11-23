@@ -234,6 +234,11 @@ All notable changes to Soprano Agents are documented here. The format follows
   a checkbox group is one checklist with its checked boxes ticked, submitted at once instead
   of one toggle per round with a "Done selecting" row; the checked radio is preselected, "Other"
   is the composer's free text, and text fields start with their default value.
+- omp 19's `ask` forms appear again: omp now sends the whole HTML form in one request, which
+  the app ignored, so the thread sat on "Thinking" until the question was cancelled. Each
+  radio group, checkbox group, dropdown and text field is a question in the composer (checked
+  and selected options preselected, defaults filled in), and the answers go back as the form's
+  values; a form with nothing to answer is submitted at once instead of blocking the turn.
 - Git: committing works with an untracked nested repository that has no commits yet; a new
   worktree whose submodules fail, or whose setup you stop or quit, is removed with its branch,
   and quit waits for that cleanup.

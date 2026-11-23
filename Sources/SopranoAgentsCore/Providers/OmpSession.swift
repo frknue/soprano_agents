@@ -6,8 +6,9 @@ import Foundation
 /// `--model` unless "default", `--thinking` for an explicit effort, `--resume <session file>`
 /// when the saved file still exists), extended PATH, cwd = the thread's workspace. Handshake:
 /// wait for `ready`, `negotiate_protocol {protocolVersion:2}`, `set_ask_dialog {enabled:true}`
-/// (the `ask` tool arrives as one `extension_ui_request` `ask`; builds without the command keep
-/// the `select`/`editor` fallback, which the mapper handles), `set_event_filter
+/// (extension `ui.askDialog` calls arrive as one `extension_ui_request` `ask`; builds without the
+/// command keep the `select`/`editor` fallback, which the mapper handles; the `ask` tool itself
+/// sends one `form` request with its HTML form since omp 19), `set_event_filter
 /// {events:null, messageUpdates:"delta"}`, then `get_state`, whose `sessionFile` (absolute
 /// `.jsonl` path) is the conversation id.
 ///
@@ -232,7 +233,8 @@ public actor OmpSession: ProviderSession {
         try? await client?.send(frame)
     }
 
-    /// The `extension_ui_response` for a dialog: `ask` → `answers`; a form field's `select`
+    /// The `extension_ui_response` for a dialog: `ask` → `answers`; `form` → the submitted
+    /// `data` (`OmpForm.data(answers:)`); a form field's `select`
     /// (radio / checkbox) → its first `OmpUIRequest.replies(to:)`, the rest returned as the
     /// follow-ups that answer the dialogs omp sends next; other `select`s → `value` (first
     /// answer); `confirm` → `confirmed` ("Yes"); `input`/`editor` → `value` (answers joined).
@@ -245,8 +247,10 @@ public actor OmpSession: ProviderSession {
             guard let first = replies.first else { return cancel }
             return (reply(first, to: request.id), Array(replies.dropFirst()))
         }
-        guard request.method == .ask || !values.isEmpty else { return cancel }
+        guard request.method == .ask || request.method == .form || !values.isEmpty else { return cancel }
         let frame: JSONValue = switch request.method {
+        case .form:
+            OmpProtocol.uiResponse(id: request.id, ["data": .object(request.form?.data(answers: answers) ?? [:])])
         case .ask:
             OmpProtocol.uiResponse(id: request.id, ["answers": .array(OmpProtocol.askAnswers(questions: request.questions, answers: answers))])
         case .select:
@@ -559,6 +563,12 @@ public actor OmpSession: ProviderSession {
                     return
                 }
                 if await answerFollowUp(request) { return }
+                if request.method == .form, request.form == nil {
+                    // Nothing to ask (only hidden inputs, or markup without a control): submit the
+                    // form's own values, since an unanswered `form` blocks omp's `ask` call.
+                    try? await client?.send(OmpProtocol.uiResponse(id: request.id, ["data": .object([:])]))
+                    return
+                }
                 pending[request.id] = request
             }
         case "response":

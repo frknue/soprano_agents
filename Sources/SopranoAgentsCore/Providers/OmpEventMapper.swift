@@ -1,9 +1,12 @@
 import Foundation
 
 /// A dialog omp asks the host to render (`extension_ui_request` with `select`, `confirm`,
-/// `input`, `editor` or `ask`), kept until it is answered or withdrawn.
+/// `input`, `editor`, `ask` or `form`), kept until it is answered or withdrawn.
 ///
-/// The `ask` tool walks an HTML form field by field (omp 18.20, recorded live): a radio group is
+/// Since omp 19 the `ask` tool sends its HTML form whole as one `form` request (`html`), parsed
+/// into `form` (`OmpForm`) and answered with the submitted `data`; a `form` request must always
+/// be answered or cancelled, or the `ask` call never returns. Earlier builds (omp 18.20) walked
+/// the form field by field: a radio group is
 /// a `select` with `selectionMarker:"radio"` (`initialIndex` = the checked radio); a checkbox
 /// group a `select` with `selectionMarker:"checkbox"`, `checkedIndices`, `markableCount` and
 /// trailing actions ("<icon> Done selecting"): each answer toggles one option and omp re-sends
@@ -18,6 +21,7 @@ public struct OmpUIRequest: Sendable, Hashable {
         case input
         case editor
         case ask
+        case form
     }
 
     /// One answer to a dialog of a form field's walk.
@@ -45,6 +49,8 @@ public struct OmpUIRequest: Sendable, Hashable {
     public var prefill: String?
     /// Raw `ask` questions (`{id, question, header?, options:[{label, description?}], multi?}`).
     public var questions: [JSONValue]
+    /// A `form` request's parsed HTML form; nil when it has no control to answer.
+    public var form: OmpForm?
 
     /// A `select` whose title starts with "Allow tool:" (omp's tool approval prompt).
     public var isApproval: Bool { method == .select && title.hasPrefix("Allow tool:") }
@@ -74,6 +80,7 @@ public struct OmpUIRequest: Sendable, Hashable {
         markableCount = frame["markableCount"]?.intValue
         prefill = frame["prefill"]?.stringValue
         questions = frame["questions"]?.arrayValue ?? []
+        form = method == .form ? frame["html"]?.stringValue.flatMap(OmpForm.init(html:)) : nil
     }
 
     /// The question id used for single-question dialogs (select/confirm/input/editor).
@@ -732,7 +739,7 @@ public struct OmpEventMapper: Sendable {
             guard let message = frame["message"]?.nonEmptyString else { return [] }
             return [notice(message, id: frame["id"]?.stringValue.map { "\(itemPrefix)notify:\($0)" })]
         default:
-            guard let request = OmpUIRequest(frame) else { return [] }
+            guard let request = OmpUIRequest(frame), request.method != .form || request.form != nil else { return [] }
             if request.isApproval {
                 let tool = request.approvalTool ?? ""
                 let candidates = tools.filter { $0.value.name == tool && !$0.value.isFinished && !approvalTools.values.contains($0.key) }
@@ -778,6 +785,8 @@ public struct OmpEventMapper: Sendable {
         let id = OmpUIRequest.singleQuestionID
         let questions: [UserInputQuestion]
         switch request.method {
+        case .form:
+            questions = request.form?.questions() ?? []
         case .ask:
             questions = request.questions.enumerated().map { index, question in
                 let options = (question["options"]?.arrayValue ?? []).compactMap { option -> UserInputOption? in
