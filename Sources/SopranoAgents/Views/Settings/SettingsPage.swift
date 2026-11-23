@@ -7,6 +7,7 @@ enum SettingsPage: String, CaseIterable, Sendable {
     case providers
     case accounts
     case resources
+    case browsers
     case textGeneration = "text-generation"
     case worktrees
     case notifications
@@ -21,6 +22,7 @@ enum SettingsPage: String, CaseIterable, Sendable {
         case .providers: "Providers"
         case .accounts: "Accounts"
         case .resources: "Resources & MCP"
+        case .browsers: "Browsers"
         case .textGeneration: "Text generation"
         case .worktrees: "Worktrees"
         case .notifications: "Notifications"
@@ -38,6 +40,7 @@ enum SettingsPage: String, CaseIterable, Sendable {
         case .providers: "cpu"
         case .accounts: "person.2"
         case .resources: "puzzlepiece.extension"
+        case .browsers: "globe"
         case .textGeneration: "text.bubble"
         case .worktrees: Icon.gitBranch
         case .notifications: "bell"
@@ -65,6 +68,9 @@ enum SettingsPage: String, CaseIterable, Sendable {
         case .resources:
             [("Shared resource folders", "skills commands rules agents.md extra directories omp dotfiles"),
              ("MCP servers", "mcp tools browser asana devtools import mcp.json")]
+        case .browsers:
+            [("AI browsers", "browser chromium chrome brave cdp port profile mcp devtools"),
+             ("Browser routing rules", "profile match rule path git remote resolver")]
         case .textGeneration:
             [("Text generation agent", "provider omp opencode"), ("Text generation model", "thread titles commit messages branch names"),
              ("Generate thread titles", "title")]

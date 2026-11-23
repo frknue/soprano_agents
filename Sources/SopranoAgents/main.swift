@@ -8,6 +8,9 @@ if launchArguments.count > 1, launchArguments[1] == "snapshot" {
 if launchArguments.count > 1, launchArguments[1] == "serve" {
     ServeCommand.run(arguments: Array(launchArguments.dropFirst(2)))
 }
+if launchArguments.count > 1, launchArguments[1] == "mcp" {
+    MCPCommand.run(arguments: Array(launchArguments.dropFirst(2)))
+}
 
 let app = NSApplication.shared
 app.setActivationPolicy(.regular)

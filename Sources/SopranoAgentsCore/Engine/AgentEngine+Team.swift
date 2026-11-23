@@ -136,13 +136,62 @@ extension AgentEngine {
                 try FileManager.default.createDirectory(at: memory, withIntermediateDirectories: true)
                 let overlay = directory.appendingPathComponent("memory.yml")
                 try TeamTools.memoryOverlay(databasePath: memory.appendingPathComponent("mnemopi.db").path).write(to: overlay, atomically: true, encoding: .utf8)
-                config.configOverlays = [overlay.path]
+                config.configOverlays.append(overlay.path)
                 let home = (config.cwd as NSString).abbreviatingWithTildeInPath
                 promptParts.append(TeamTools.persona(teammate, home: home, hasMemory: true))
             }
         } else if let teammate = thread.teammate {
             let home = (config.cwd as NSString).abbreviatingWithTildeInPath
             promptParts.append(TeamTools.persona(teammate, home: home, hasMemory: false))
+        }
+
+        if settings.browsers.enabled {
+            let resolvedBrowser = resolveBrowserProfile(forDirectory: cwd)
+            if provider == .omp {
+                if let resolvedBrowser {
+                    let runtimeDir = environment.dataDirectory.appendingPathComponent("runtime/\(thread.id)", isDirectory: true)
+                    try FileManager.default.createDirectory(at: runtimeDir, withIntermediateDirectories: true)
+                    let browserOverlay = runtimeDir.appendingPathComponent("browser.yml")
+                    try BrowserProfileResolver.ompBrowserOverlay(cdpURL: resolvedBrowser.cdpURL)
+                        .write(to: browserOverlay, atomically: true, encoding: .utf8)
+                    config.configOverlays.append(browserOverlay.path)
+                }
+            } else {
+                let existingNames = Set(config.mcpServers.map(\.name))
+                if let custom = settings.browsers.customMcpCommand {
+                    if !existingNames.contains(custom.name) {
+                        config.mcpServers.append(custom)
+                    }
+                } else if let executable = environment.executablePath,
+                          !existingNames.contains("soprano-browser"),
+                          (resolvedBrowser != nil || !settings.browsers.profiles.isEmpty || settings.browsers.resolverCommand != nil) {
+                    let runtimeRoot = environment.dataDirectory.appendingPathComponent("runtime", isDirectory: true)
+                    try FileManager.default.createDirectory(at: runtimeRoot, withIntermediateDirectories: true)
+                    let settingsFile = runtimeRoot.appendingPathComponent("browser-settings.json")
+                    if let data = try? JSONEncoder().encode(settings.browsers) {
+                        try? data.write(to: settingsFile, options: .atomic)
+                    }
+                    var args = ["mcp", "browser", "--settings-json", settingsFile.path, "--cwd", cwd]
+                    if let resolvedBrowser {
+                        args.append(contentsOf: ["--cdp-url", resolvedBrowser.cdpURL])
+                    }
+                    config.mcpServers.append(MCPServerSpec(
+                        name: "soprano-browser",
+                        transport: .stdio(command: executable, args: args)
+                    ))
+                }
+                if settings.browsers.includeChromeDevtoolsMcp,
+                   let resolvedBrowser,
+                   !existingNames.contains("chrome-devtools") {
+                    config.mcpServers.append(MCPServerSpec(
+                        name: "chrome-devtools",
+                        transport: .stdio(
+                            command: "npx",
+                            args: ["-y", "chrome-devtools-mcp@latest", "--browserUrl=\(resolvedBrowser.cdpURL)"]
+                        )
+                    ))
+                }
+            }
         }
 
         if !promptParts.isEmpty {
@@ -154,6 +203,33 @@ extension AgentEngine {
         }
 
         return config
+    }
+
+    /// Resolves the Chromium CDP browser profile for `cwd` using `settings.browsers`.
+    public func resolveBrowserProfile(forDirectory cwd: String? = nil) -> ResolvedBrowserProfile? {
+        BrowserProfileResolver.resolve(
+            cwd: cwd,
+            settings: settings.browsers,
+            home: environment.resourceHome ?? NSHomeDirectory()
+        )
+    }
+
+    /// Probes every configured Chromium CDP browser profile for live status.
+    public func probeBrowserProfiles() async -> [BrowserProfileStatus] {
+        await BrowserProfileManager.probeAll(settings: settings.browsers)
+    }
+
+    /// Launches (or opens a tab in) a configured external Chromium CDP browser profile.
+    @discardableResult
+    public func launchBrowserProfile(_ profileID: String, initialURL: String? = nil) async throws -> BrowserProfileStatus {
+        guard let profile = settings.browsers.profiles.first(where: { $0.id == profileID }) else {
+            throw EngineError.message("Unknown browser profile: \(profileID)")
+        }
+        return try await BrowserProfileManager.launch(
+            profile: profile,
+            initialURL: initialURL,
+            home: environment.resourceHome ?? NSHomeDirectory()
+        )
     }
 
     /// Discovers shared resources (skills, commands, rules, instructions, MCP servers) for `cwd`.

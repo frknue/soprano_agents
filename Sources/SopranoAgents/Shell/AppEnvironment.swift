@@ -89,6 +89,9 @@ struct AppSettings: Equatable, Sendable {
     /// Shared skills, commands, rules and MCP server configuration across all providers.
     var resources = ResourceSettings()
 
+    /// Shared external Chromium/CDP browser profiles and routing rules.
+    var browsers = BrowserSettings()
+
     static let defaults = AppSettings()
 
     /// The engine's view of these settings.
@@ -107,7 +110,8 @@ struct AppSettings: Equatable, Sendable {
             claudePath: claudePath,
             opencodePath: opencodePath,
             antigravityPath: antigravityPath,
-            resources: resources
+            resources: resources,
+            browsers: browsers
         )
     }
 }

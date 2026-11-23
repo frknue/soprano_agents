@@ -26,6 +26,14 @@ All notable changes to Soprano Agents are documented here. The format follows
   titles, branch names and commit messages; `providers.opencodePath` if `opencode` is not on
   `PATH`. Settings → Providers shows each agent's status. Statistics, Accounts and word
   completion stay omp's.
+- External Chromium CDP browser profiles & built-in CDP browser MCP (**Settings › Browsers**,
+  `browsers.*`): define any Chromium-family profiles (Chrome, Chrome Beta, Chromium, Brave) with
+  local CDP ports (`127.0.0.1:<port>`) and workspace routing rules (path prefixes, project names,
+  git remote substrings, or an optional external `resolverCommand`). Non-omp providers (Codex,
+  Claude Code, Antigravity, OpenCode) automatically receive the built-in zero-WebKit CDP browser
+  MCP (`SopranoAgents mcp browser` — owned background tabs, observe, evaluate, screenshot, DOM
+  actions, cookies, orphan cleanup — or a custom `customMcpCommand` plus optional
+  `chrome-devtools-mcp`), while `omp` receives a per-thread `browser.cdpUrl` overlay.
 - Shared resources & MCP registry (**Settings › Resources & MCP**): skills, `/` commands,
   rules (`AGENTS.md`, `RULES.md`, `rules/*.md`), and MCP servers discovered from
   `~/.config/soprano-agents/`, `~/.agents/skills`, project overrides (`.soprano-agents/`,

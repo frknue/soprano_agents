@@ -64,7 +64,7 @@ enum SettingsResolver {
             issues.append(ConfigIssue(severity: .warning, message: message))
         }
 
-        let knownTopLevel: Set<String> = ["theme", "agents", "providers", "textGeneration", "worktrees", "projects", "resources", "mcpServers", "chat", "notifications", "remote", "editor", "keybindings"]
+        let knownTopLevel: Set<String> = ["theme", "agents", "providers", "textGeneration", "worktrees", "projects", "resources", "mcpServers", "browsers", "chat", "notifications", "remote", "editor", "keybindings"]
         for key in root.keys.sorted() where !knownTopLevel.contains(key) {
             warn("Unknown setting \"\(key)\".")
         }
@@ -227,6 +227,127 @@ enum SettingsResolver {
                 }
             }
             result.settings.resources.mcpServers = ResourceCatalog.parseMCPDictionary(mapped)
+        }
+
+        if let browsers = section("browsers", in: root, warn: warn) {
+            let known: Set<String> = [
+                "enabled", "defaultProfile", "idleCloseSeconds", "resolverCommand",
+                "customMcpCommand", "includeChromeDevtoolsMcp", "profiles", "rules",
+            ]
+            for key in browsers.keys.sorted() where !known.contains(key) {
+                warn("Unknown setting \"browsers.\(key)\".")
+            }
+            if let value = browsers["enabled"] {
+                if let flag = value as? Bool { result.settings.browsers.enabled = flag } else { warn("browsers.enabled must be true or false.") }
+            }
+            if let value = browsers["defaultProfile"] {
+                if let profile = value as? String, !profile.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    result.settings.browsers.defaultProfile = profile.trimmingCharacters(in: .whitespacesAndNewlines)
+                } else if value is NSNull {
+                    result.settings.browsers.defaultProfile = nil
+                } else {
+                    warn("browsers.defaultProfile must be a profile id string.")
+                }
+            }
+            if let value = browsers["idleCloseSeconds"] {
+                if let seconds = integer(value), seconds >= 0 {
+                    result.settings.browsers.idleCloseSeconds = seconds
+                } else {
+                    warn("browsers.idleCloseSeconds must be a non-negative integer.")
+                }
+            }
+            if let value = browsers["includeChromeDevtoolsMcp"] {
+                if let flag = value as? Bool { result.settings.browsers.includeChromeDevtoolsMcp = flag } else { warn("browsers.includeChromeDevtoolsMcp must be true or false.") }
+            }
+            if let value = browsers["resolverCommand"] {
+                if let array = value as? [Any], array.allSatisfy({ $0 is String }) {
+                    let tokens = array.compactMap { $0 as? String }.filter { !$0.isEmpty }
+                    result.settings.browsers.resolverCommand = tokens.isEmpty ? nil : tokens
+                } else if value is NSNull {
+                    result.settings.browsers.resolverCommand = nil
+                } else {
+                    warn("browsers.resolverCommand must be an array of command arguments.")
+                }
+            }
+            if let value = browsers["customMcpCommand"] {
+                if value is NSNull {
+                    result.settings.browsers.customMcpCommand = nil
+                } else if let obj = value as? [String: Any],
+                          let json = try? JSONSerialization.data(withJSONObject: obj),
+                          let text = String(data: json, encoding: .utf8),
+                          let parsed = try? JSONValue.parse(text) {
+                    let rawName = parsed["name"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let name = (rawName?.isEmpty == false) ? rawName! : "soprano-browser"
+                    if let spec = ResourceCatalog.parseMCPDictionary([name: parsed]).first {
+                        result.settings.browsers.customMcpCommand = spec
+                    } else {
+                        warn("browsers.customMcpCommand must define \"command\" or \"url\".")
+                    }
+                } else {
+                    warn("browsers.customMcpCommand must be an MCP server object.")
+                }
+            }
+            if let value = browsers["profiles"] {
+                if let entries = value as? [Any] {
+                    var profiles: [BrowserProfile] = []
+                    var seenIDs: Set<String> = []
+                    for (index, raw) in entries.enumerated() {
+                        guard let obj = raw as? [String: Any],
+                              let id = (obj["id"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !id.isEmpty,
+                              let port = obj["port"].flatMap(integer), (1...65535).contains(port)
+                        else {
+                            warn("browsers.profiles[\(index)] must have non-empty \"id\" and valid \"port\" (1–65535).")
+                            continue
+                        }
+                        if seenIDs.contains(id) {
+                            warn("Duplicate browser profile id \"\(id)\".")
+                            continue
+                        }
+                        seenIDs.insert(id)
+                        let label = obj["label"] as? String
+                        let userDataDir = obj["userDataDirectory"] as? String
+                        let binaryPath = obj["binaryPath"] as? String
+                        let extraArgs = (obj["extraArgs"] as? [Any])?.compactMap { $0 as? String } ?? []
+                        profiles.append(BrowserProfile(
+                            id: id,
+                            label: label,
+                            port: port,
+                            userDataDirectory: userDataDir,
+                            binaryPath: binaryPath,
+                            extraArgs: extraArgs
+                        ))
+                    }
+                    result.settings.browsers.profiles = profiles
+                } else {
+                    warn("browsers.profiles must be an array of profile objects.")
+                }
+            }
+            if let value = browsers["rules"] {
+                if let entries = value as? [Any] {
+                    var rules: [BrowserMatchRule] = []
+                    for (index, raw) in entries.enumerated() {
+                        guard let obj = raw as? [String: Any],
+                              let profileID = ((obj["profile"] ?? obj["profileID"]) as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                              !profileID.isEmpty
+                        else {
+                            warn("browsers.rules[\(index)] must specify \"profile\".")
+                            continue
+                        }
+                        let pathPrefixes = (obj["pathPrefixes"] as? [Any])?.compactMap { $0 as? String } ?? []
+                        let gitRemoteSubstrings = (obj["gitRemoteSubstrings"] as? [Any])?.compactMap { $0 as? String } ?? []
+                        let projectNames = (obj["projectNames"] as? [Any])?.compactMap { $0 as? String } ?? []
+                        rules.append(BrowserMatchRule(
+                            profileID: profileID,
+                            pathPrefixes: pathPrefixes,
+                            gitRemoteSubstrings: gitRemoteSubstrings,
+                            projectNames: projectNames
+                        ))
+                    }
+                    result.settings.browsers.rules = rules
+                } else {
+                    warn("browsers.rules must be an array of match rule objects.")
+                }
+            }
         }
 
         if let chat = section("chat", in: root, warn: warn) {

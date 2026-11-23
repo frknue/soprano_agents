@@ -83,7 +83,9 @@ The installer never restarts a running Soprano Agents; the update applies on the
    rules (`AGENTS.md`, `rules/*.md`) and MCP servers in `~/.config/soprano-agents/`,
    `~/.agents/skills`, project overrides, or any folder/file configured in **Settings › Resources
    & MCP** (`resources.extraDirectories`, `resources.importMcpFiles`, `mcpServers`) are shared
-   across all providers.
+   across all providers. External Chromium-family browser profiles over CDP (`127.0.0.1:<port>`,
+   no WebKit) can be configured in **Settings › Browsers** (`browsers.*`) and are shared with every
+   provider via the built-in `SopranoAgents mcp browser` server or omp's `browser.cdpUrl` overlay.
 8. The composer has omp's typing aids: misspellings and grammar problems are underlined (code,
    paths and identifiers are left alone; right-click for corrections), and omp predicts the word
    you are typing as grey ghost text — Tab accepts it with a space, → without. They follow omp's

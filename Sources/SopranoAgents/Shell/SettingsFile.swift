@@ -150,6 +150,27 @@ enum SettingsFile {
             // "my-server": { "command": "npx", "args": ["-y", "my-mcp"], "env": {} }
           },
 
+          "browsers": {
+            // External Chromium-family browser profiles over Chrome DevTools Protocol (CDP, never WebKit).
+            "enabled": false,
+            // Default profile id when no rule matches; omit for the first profile.
+            // "defaultProfile": "default",
+            // Auto-close idle agent-owned tabs after this many seconds (0 disables).
+            "idleCloseSeconds": 1800,
+            // Also inject chrome-devtools-mcp alongside the built-in CDP browser MCP.
+            "includeChromeDevtoolsMcp": false,
+            // Optional external CLI returning http://127.0.0.1:<port> for a workspace ({cwd}, {profile}).
+            // "resolverCommand": ["~/.omp/ai-browser/ai-browser", "url", "--path", "{cwd}"],
+            // Optional custom browser MCP server overriding the built-in CDP browser MCP.
+            // "customMcpCommand": { "name": "soprano-browser", "command": "bun", "args": ["path/to/browser-mcp.ts"] },
+            "profiles": [
+              // { "id": "default", "label": "Default", "port": 9333 }
+            ],
+            "rules": [
+              // { "profile": "work", "pathPrefixes": ["~/git/work"], "gitRemoteSubstrings": ["github.com/acme"] }
+            ]
+          },
+
           "chat": {
             // Sending while the agent works: "steer" the running turn or "queue" after it. ⌘↩ does the other.
             "followUp": "steer",

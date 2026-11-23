@@ -140,6 +140,8 @@ public struct EngineSettings: Sendable, Hashable {
     public var antigravityPath: String?
     /// Shared skills, commands, rules and MCP server configuration across all providers.
     public var resources: ResourceSettings
+    /// Shared external Chromium/CDP browser profiles and routing rules.
+    public var browsers: BrowserSettings
 
     public init(
         defaultModel: ModelSelection = .default(for: .omp),
@@ -153,7 +155,8 @@ public struct EngineSettings: Sendable, Hashable {
         claudePath: String? = nil,
         opencodePath: String? = nil,
         antigravityPath: String? = nil,
-        resources: ResourceSettings = ResourceSettings()
+        resources: ResourceSettings = ResourceSettings(),
+        browsers: BrowserSettings = BrowserSettings()
     ) {
         self.defaultModel = defaultModel
         self.defaultRuntimeMode = defaultRuntimeMode
@@ -167,6 +170,7 @@ public struct EngineSettings: Sendable, Hashable {
         self.opencodePath = opencodePath
         self.antigravityPath = antigravityPath
         self.resources = resources
+        self.browsers = browsers
     }
 }
 
@@ -266,6 +270,9 @@ public struct EngineEnvironment: Sendable {
     /// Home directory scanned for shared resources (`~/.config/soprano-agents`, `~/.agents/skills`,
     /// `resources.extraDirectories`); nil disables home scanning in tests and fixtures.
     public var resourceHome: String?
+    /// Path to the `SopranoAgents` executable for built-in stdio MCP subcommands (`mcp browser`,
+    /// `mcp team`); nil in tests unless explicitly supplied.
+    public var executablePath: String?
     public var now: @Sendable () -> Date
 
     public init(
@@ -278,6 +285,7 @@ public struct EngineEnvironment: Sendable {
         textAssistants: [ProviderKind: any TextAssistant] = [:],
         ompAgentsDirectory: URL? = nil,
         resourceHome: String? = nil,
+        executablePath: String? = nil,
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.drivers = drivers
@@ -289,6 +297,7 @@ public struct EngineEnvironment: Sendable {
         self.textAssistants = textAssistants
         self.ompAgentsDirectory = ompAgentsDirectory
         self.resourceHome = resourceHome
+        self.executablePath = executablePath
         self.now = now
     }
 }
