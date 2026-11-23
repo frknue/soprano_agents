@@ -64,7 +64,7 @@ enum SettingsResolver {
             issues.append(ConfigIssue(severity: .warning, message: message))
         }
 
-        let knownTopLevel: Set<String> = ["theme", "agents", "providers", "textGeneration", "worktrees", "projects", "chat", "notifications", "remote", "editor", "keybindings"]
+        let knownTopLevel: Set<String> = ["theme", "agents", "providers", "textGeneration", "worktrees", "projects", "resources", "mcpServers", "chat", "notifications", "remote", "editor", "keybindings"]
         for key in root.keys.sorted() where !knownTopLevel.contains(key) {
             warn("Unknown setting \"\(key)\".")
         }
@@ -186,6 +186,47 @@ enum SettingsResolver {
                     warn("projects.directories must be an array of folder paths.")
                 }
             }
+        }
+
+        if let resources = section("resources", in: root, warn: warn) {
+            let known: Set<String> = ["extraDirectories", "importMcpFiles", "injectInstructions", "injectMcp"]
+            for key in resources.keys.sorted() where !known.contains(key) {
+                warn("Unknown setting \"resources.\(key)\".")
+            }
+            if let value = resources["extraDirectories"] {
+                if let entries = value as? [Any], entries.allSatisfy({ $0 is String }) {
+                    result.settings.resources.extraDirectories = entries.compactMap { ($0 as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+                } else {
+                    warn("resources.extraDirectories must be an array of folder paths.")
+                }
+            }
+            if let value = resources["importMcpFiles"] {
+                if let entries = value as? [Any], entries.allSatisfy({ $0 is String }) {
+                    result.settings.resources.importMcpFiles = entries.compactMap { ($0 as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+                } else {
+                    warn("resources.importMcpFiles must be an array of file paths.")
+                }
+            }
+            if let value = resources["injectInstructions"] {
+                if let flag = value as? Bool { result.settings.resources.injectInstructions = flag } else { warn("resources.injectInstructions must be true or false.") }
+            }
+            if let value = resources["injectMcp"] {
+                if let flag = value as? Bool { result.settings.resources.injectMcp = flag } else { warn("resources.injectMcp must be true or false.") }
+            }
+        }
+
+        if let mcp = section("mcpServers", in: root, warn: warn) {
+            var mapped: [String: JSONValue] = [:]
+            for (name, raw) in mcp {
+                if let json = try? JSONSerialization.data(withJSONObject: raw),
+                   let text = String(data: json, encoding: .utf8),
+                   let value = try? JSONValue.parse(text) {
+                    mapped[name] = value
+                } else {
+                    warn("mcpServers.\(name) must be an MCP server object.")
+                }
+            }
+            result.settings.resources.mcpServers = ResourceCatalog.parseMCPDictionary(mapped)
         }
 
         if let chat = section("chat", in: root, warn: warn) {

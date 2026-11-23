@@ -108,30 +108,61 @@ extension AgentEngine {
         environment.dataDirectory.appendingPathComponent("team/\(threadID)", isDirectory: true)
     }
 
-    /// The session settings a thread's conversation starts with: its working directory, model
-    /// and resume id; for omp also the team tools, and for a teammate its persona and memory
-    /// (written fresh on every launch).
+    /// The session settings a thread's conversation starts with: its working directory, model,
+    /// resume id, shared MCP servers and instructions (`ResourceCatalog`), plus omp's team tools
+    /// and a teammate's persona and memory (written fresh on every launch).
     func sessionConfig(for thread: AgentThread) throws -> SessionConfig {
+        let cwd = workingDirectory(for: thread)
+        let provider = thread.modelSelection.provider
+        let resources = resolvedResources(forDirectory: cwd)
         var config = SessionConfig(
-            cwd: workingDirectory(for: thread),
+            cwd: cwd,
             modelSelection: thread.modelSelection,
             runtimeMode: thread.runtimeMode,
-            resumeID: thread.providerThreadID
+            resumeID: thread.providerThreadID,
+            mcpServers: ResourceCatalog.mcpServers(from: resources, for: provider, settings: settings.resources)
         )
-        guard thread.modelSelection.provider == .omp else { return config }
-        config.hostTools = teamToolDefinitions(for: thread)
-        guard let teammate = thread.teammate else { return config }
-        let directory = teammateDirectory(thread.id)
-        let memory = directory.appendingPathComponent("memory", isDirectory: true)
-        try FileManager.default.createDirectory(at: memory, withIntermediateDirectories: true)
-        let persona = directory.appendingPathComponent("persona.md")
-        let overlay = directory.appendingPathComponent("memory.yml")
-        let home = (config.cwd as NSString).abbreviatingWithTildeInPath
-        try TeamTools.persona(teammate, home: home, hasMemory: true).write(to: persona, atomically: true, encoding: .utf8)
-        try TeamTools.memoryOverlay(databasePath: memory.appendingPathComponent("mnemopi.db").path).write(to: overlay, atomically: true, encoding: .utf8)
-        config.systemPromptFile = persona.path
-        config.configOverlays = [overlay.path]
+
+        var promptParts: [String] = []
+        if let sharedAppendix = ResourceCatalog.systemPromptAppendix(from: resources, for: provider, settings: settings.resources) {
+            promptParts.append(sharedAppendix)
+        }
+
+        if provider == .omp {
+            config.hostTools = teamToolDefinitions(for: thread)
+            if let teammate = thread.teammate {
+                let directory = teammateDirectory(thread.id)
+                let memory = directory.appendingPathComponent("memory", isDirectory: true)
+                try FileManager.default.createDirectory(at: memory, withIntermediateDirectories: true)
+                let overlay = directory.appendingPathComponent("memory.yml")
+                try TeamTools.memoryOverlay(databasePath: memory.appendingPathComponent("mnemopi.db").path).write(to: overlay, atomically: true, encoding: .utf8)
+                config.configOverlays = [overlay.path]
+                let home = (config.cwd as NSString).abbreviatingWithTildeInPath
+                promptParts.append(TeamTools.persona(teammate, home: home, hasMemory: true))
+            }
+        } else if let teammate = thread.teammate {
+            let home = (config.cwd as NSString).abbreviatingWithTildeInPath
+            promptParts.append(TeamTools.persona(teammate, home: home, hasMemory: false))
+        }
+
+        if !promptParts.isEmpty {
+            let runtimeDir = environment.dataDirectory.appendingPathComponent("runtime/\(thread.id)", isDirectory: true)
+            try FileManager.default.createDirectory(at: runtimeDir, withIntermediateDirectories: true)
+            let promptFile = runtimeDir.appendingPathComponent("system-prompt.md")
+            try promptParts.joined(separator: "\n\n").write(to: promptFile, atomically: true, encoding: .utf8)
+            config.systemPromptFile = promptFile.path
+        }
+
         return config
+    }
+
+    /// Discovers shared resources (skills, commands, rules, instructions, MCP servers) for `cwd`.
+    public func resolvedResources(forDirectory cwd: String? = nil) -> ResolvedResources {
+        guard let home = environment.resourceHome else {
+            guard !settings.resources.mcpServers.isEmpty else { return ResolvedResources() }
+            return ResolvedResources(mcpServers: settings.resources.mcpServers.map { SharedMCPServer(spec: $0, source: .soprano) })
+        }
+        return ResourceCatalog.discover(cwd: cwd, settings: settings.resources, home: home)
     }
 
     /// The team tools of `thread`'s conversation: the other teammates it can reach.

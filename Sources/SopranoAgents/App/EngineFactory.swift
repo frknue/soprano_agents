@@ -114,7 +114,8 @@ enum EngineFactory {
                 ),
             ],
             ompAgentsDirectory: FileManager.default.homeDirectoryForCurrentUser
-                .appendingPathComponent(".omp/agent/agents", isDirectory: true)
+                .appendingPathComponent(".omp/agent/agents", isDirectory: true),
+            resourceHome: NSHomeDirectory()
         )
         return AgentEngine(environment: environment, settings: settings)
     }

@@ -81,8 +81,10 @@ extension AgentEngine {
                 try await session.compact()
                 providerTurnID = nil
             } else {
+                let rawText = TeamTools.providerText(turn.userMessage, teammate: current.teammate)
+                let expandedText = expandSharedCommandIfNeeded(rawText, for: current)
                 let input = TurnInput(
-                    text: TeamTools.providerText(turn.userMessage, teammate: current.teammate),
+                    text: expandedText,
                     attachments: turn.userMessage.attachments,
                     modelSelection: turn.modelSelection,
                     runtimeMode: current.runtimeMode,

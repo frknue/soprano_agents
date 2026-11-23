@@ -9,6 +9,7 @@ extension SettingsController {
         case .general: generalPage(form)
         case .providers: providersPage(form)
         case .accounts: accountsPage(form)
+        case .resources: resourcesPage(form)
         case .textGeneration: textGenerationPage(form)
         case .worktrees: worktreesPage(form)
         case .notifications: notificationsPage(form)
@@ -295,6 +296,98 @@ extension SettingsController {
                 description: "\(settings.defaultRuntimeMode.title): \(settings.defaultRuntimeMode.summary)",
                 reset: reset(["agents", "defaultRuntimeMode"], isDefault: settings.defaultRuntimeMode == defaults.defaultRuntimeMode),
                 control: permissions
+            ),
+        ]))
+        return sections
+    }
+
+    // MARK: Resources & MCP
+
+    private func resourcesPage(_ form: SettingsForm) -> [NSView] {
+        let configuredDirs = (center.configuredValue(at: ["resources", "extraDirectories"]) as? [Any])?.compactMap { $0 as? String }
+        let extraDirs = form.field(
+            (configuredDirs ?? []).joined(separator: ", "),
+            placeholder: "~/.omp/agent",
+            width: 288,
+            identifier: "resources.extraDirectories",
+            mono: true
+        ) { [weak self] value in
+            let separators = CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: ","))
+            let paths = value.split(separator: #/,\s*(?=[~\/])/#).map { $0.trimmingCharacters(in: separators) }.filter { !$0.isEmpty }
+            if paths.isEmpty { self?.remove(["resources", "extraDirectories"]) } else { self?.write(paths, at: ["resources", "extraDirectories"]) }
+        }
+
+        let configuredMcpFiles = (center.configuredValue(at: ["resources", "importMcpFiles"]) as? [Any])?.compactMap { $0 as? String }
+        let mcpFiles = form.field(
+            (configuredMcpFiles ?? []).joined(separator: ", "),
+            placeholder: "~/.omp/agent/mcp.json",
+            width: 288,
+            identifier: "resources.importMcpFiles",
+            mono: true
+        ) { [weak self] value in
+            let separators = CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: ","))
+            let paths = value.split(separator: #/,\s*(?=[~\/])/#).map { $0.trimmingCharacters(in: separators) }.filter { !$0.isEmpty }
+            if paths.isEmpty { self?.remove(["resources", "importMcpFiles"]) } else { self?.write(paths, at: ["resources", "importMcpFiles"]) }
+        }
+
+        let injectInstructions = form.toggle(settings.resources.injectInstructions, label: "Share instructions & skills") { [weak self] isOn in
+            self?.write(isOn, at: ["resources", "injectInstructions"])
+        }
+        let injectMcp = form.toggle(settings.resources.injectMcp, label: "Share MCP servers") { [weak self] isOn in
+            self?.write(isOn, at: ["resources", "injectMcp"])
+        }
+
+        let discovered = engine.resolvedResources()
+        var sections: [NSView] = [
+            form.section("Shared sources", [
+                form.row(
+                    "Extra folders",
+                    description: "Additional folders scanned for AGENTS.md, RULES.md, rules/, skills/, commands/ and mcp.json (besides ~/.config/soprano-agents, ~/.agents/skills and project overrides). Separate with commas.",
+                    reset: reset(["resources", "extraDirectories"], isDefault: settings.resources.extraDirectories.isEmpty),
+                    control: extraDirs
+                ),
+                form.row(
+                    "Imported mcp.json files",
+                    description: "Existing MCP config files merged into every provider session. Separate with commas.",
+                    reset: reset(["resources", "importMcpFiles"], isDefault: settings.resources.importMcpFiles.isEmpty),
+                    control: mcpFiles
+                ),
+                form.row(
+                    "Share instructions & skills",
+                    description: "Append discovered instructions, rules and a skills index to sessions that support it (Codex, Claude Code, Antigravity).",
+                    reset: reset(["resources", "injectInstructions"], isDefault: settings.resources.injectInstructions == defaults.resources.injectInstructions),
+                    control: injectInstructions
+                ),
+                form.row(
+                    "Share MCP servers",
+                    description: "Pass discovered and inline MCP servers to sessions that support MCP injection.",
+                    reset: reset(["resources", "injectMcp"], isDefault: settings.resources.injectMcp == defaults.resources.injectMcp),
+                    control: injectMcp
+                ),
+            ]),
+        ]
+
+        let skillSummary = discovered.skills.isEmpty
+            ? "None discovered yet. Place skills in ~/.config/soprano-agents/skills or ~/.agents/skills."
+            : discovered.skills.prefix(8).map(\.name).joined(separator: ", ") + (discovered.skills.count > 8 ? " and \(discovered.skills.count - 8) more" : "")
+        let commandSummary = discovered.commands.isEmpty
+            ? "None discovered yet. Place Markdown commands in ~/.config/soprano-agents/commands."
+            : discovered.commands.prefix(8).map { "/\($0.name)" }.joined(separator: ", ") + (discovered.commands.count > 8 ? " and \(discovered.commands.count - 8) more" : "")
+        let ruleSummary = discovered.rules.isEmpty
+            ? "None discovered yet. Place rule files in ~/.config/soprano-agents/rules."
+            : discovered.rules.prefix(8).map(\.name).joined(separator: ", ") + (discovered.rules.count > 8 ? " and \(discovered.rules.count - 8) more" : "")
+        let mcpSummary = discovered.mcpServers.isEmpty
+            ? "None configured yet. Add entries under \"mcpServers\" in settings.json or import a mcp.json file above."
+            : discovered.mcpServers.map { "\($0.spec.name) (\($0.source.rawValue))" }.joined(separator: ", ")
+
+        sections.append(form.section("Discovered", [
+            form.row("Skills (\(discovered.skills.count))", description: skillSummary),
+            form.row("Commands (\(discovered.commands.count))", description: commandSummary),
+            form.row("Rules (\(discovered.rules.count))", description: ruleSummary),
+            form.row(
+                "MCP servers (\(discovered.mcpServers.count))",
+                description: mcpSummary,
+                control: form.button("Edit settings.json", size: .xs) { [weak self] in self?.center.openInEditor() }
             ),
         ]))
         return sections

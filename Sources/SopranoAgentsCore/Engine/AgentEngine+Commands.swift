@@ -15,20 +15,27 @@ extension AgentEngine {
 
     // MARK: Commands
 
-    /// Slash commands and skills of the thread's provider, in menu order: the live session's
-    /// list, else the last list this provider reported this run for the thread's workspace (or
-    /// its project), else [].
+    /// Slash commands and skills of the thread's provider, merged with shared resources discovered
+    /// by `ResourceCatalog` (provider-native commands keep priority on duplicate `insertText`).
     public func commands(forThread threadID: String) -> [ProviderCommand] {
         guard let thread = thread(threadID) else { return [] }
         let provider = thread.modelSelection.provider
-        if let live = runtime.existingThread(threadID)?.commands, live.provider == provider { return live.list }
-        if let list = rememberedCommands(provider, directory: workingDirectory(for: thread)) { return list }
-        if let project = project(thread.projectID), let list = rememberedCommands(provider, directory: project.path) { return list }
-        return []
+        let cwd = workingDirectory(for: thread)
+        let native: [ProviderCommand]
+        if let live = runtime.existingThread(threadID)?.commands, live.provider == provider {
+            native = live.list
+        } else if let list = rememberedCommands(provider, directory: cwd) {
+            native = list
+        } else if let project = project(thread.projectID), let list = rememberedCommands(provider, directory: project.path) {
+            native = list
+        } else {
+            native = []
+        }
+        return mergeWithSharedCommands(native, directory: cwd)
     }
 
     /// The last list `provider` reported this run for the project's root (a projectless draft:
-    /// for any scratch workspace), else [].
+    /// for any scratch workspace), merged with shared resources.
     public func commands(forDraft provider: ProviderKind, projectID: String?) -> [ProviderCommand] {
         let directory: String
         if let projectID {
@@ -37,7 +44,36 @@ extension AgentEngine {
         } else {
             directory = scratchRoot.path
         }
-        return rememberedCommands(provider, directory: directory) ?? []
+        let native = rememberedCommands(provider, directory: directory) ?? []
+        return mergeWithSharedCommands(native, directory: directory)
+    }
+
+    private func mergeWithSharedCommands(_ native: [ProviderCommand], directory: String) -> [ProviderCommand] {
+        let shared = ResourceCatalog.composerCommands(from: resolvedResources(forDirectory: directory))
+        guard !shared.isEmpty else { return native }
+        return ProviderCommand.normalized(native + shared)
+    }
+
+    /// Expands a leading `/<command>` or `/skill:<name>` from shared resources when the thread's
+    /// provider does not list that command natively (e.g. Antigravity running shared Markdown
+    /// workflows or skills).
+    func expandSharedCommandIfNeeded(_ text: String, for thread: AgentThread) -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix("/"), trimmed != Self.compactCommand else { return text }
+        let provider = thread.modelSelection.provider
+        // omp and Claude Code handle their own `/` commands and skills natively; Codex translates
+        // `/skill:<name>` in `CodexProtocol.userInput`. Only expand when the command isn't native.
+        let cwd = workingDirectory(for: thread)
+        let native = (runtime.existingThread(thread.id)?.commands?.list ?? rememberedCommands(provider, directory: cwd) ?? [])
+        let token = String(trimmed.dropFirst().prefix { !$0.isWhitespace })
+        if native.contains(where: { $0.name.caseInsensitiveCompare(token) == .orderedSame }) {
+            return text
+        }
+        if provider == .codex, token.hasPrefix("skill:") {
+            return text
+        }
+        let resources = resolvedResources(forDirectory: cwd)
+        return ResourceCatalog.expandPrompt(text, resources: resources) ?? text
     }
 
     /// Remembers `commands` (deduplicated and sorted, see `ProviderCommand.normalized`) as the

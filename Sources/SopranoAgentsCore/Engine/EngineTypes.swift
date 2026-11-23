@@ -138,6 +138,8 @@ public struct EngineSettings: Sendable, Hashable {
     public var claudePath: String?
     public var opencodePath: String?
     public var antigravityPath: String?
+    /// Shared skills, commands, rules and MCP server configuration across all providers.
+    public var resources: ResourceSettings
 
     public init(
         defaultModel: ModelSelection = .default(for: .omp),
@@ -150,7 +152,8 @@ public struct EngineSettings: Sendable, Hashable {
         codexPath: String? = nil,
         claudePath: String? = nil,
         opencodePath: String? = nil,
-        antigravityPath: String? = nil
+        antigravityPath: String? = nil,
+        resources: ResourceSettings = ResourceSettings()
     ) {
         self.defaultModel = defaultModel
         self.defaultRuntimeMode = defaultRuntimeMode
@@ -163,6 +166,7 @@ public struct EngineSettings: Sendable, Hashable {
         self.claudePath = claudePath
         self.opencodePath = opencodePath
         self.antigravityPath = antigravityPath
+        self.resources = resources
     }
 }
 
@@ -259,6 +263,9 @@ public struct EngineEnvironment: Sendable {
     /// omp's user agents folder (`~/.omp/agent/agents`), where teammates that opted in are
     /// exported; nil = never export (tests, fixtures).
     public var ompAgentsDirectory: URL?
+    /// Home directory scanned for shared resources (`~/.config/soprano-agents`, `~/.agents/skills`,
+    /// `resources.extraDirectories`); nil disables home scanning in tests and fixtures.
+    public var resourceHome: String?
     public var now: @Sendable () -> Date
 
     public init(
@@ -270,6 +277,7 @@ public struct EngineEnvironment: Sendable {
         usage: any UsageStatisticsService = OmpUsageStatistics(),
         textAssistants: [ProviderKind: any TextAssistant] = [:],
         ompAgentsDirectory: URL? = nil,
+        resourceHome: String? = nil,
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.drivers = drivers
@@ -280,6 +288,7 @@ public struct EngineEnvironment: Sendable {
         self.usage = usage
         self.textAssistants = textAssistants
         self.ompAgentsDirectory = ompAgentsDirectory
+        self.resourceHome = resourceHome
         self.now = now
     }
 }

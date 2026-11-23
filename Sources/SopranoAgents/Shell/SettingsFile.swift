@@ -132,6 +132,24 @@ enum SettingsFile {
             "directories": []
           },
 
+          "resources": {
+            // Extra folders scanned for shared AGENTS.md, RULES.md, rules/, skills/, commands/, mcp.json
+            // (in addition to ~/.config/soprano-agents, ~/.agents/skills and project overrides).
+            // Example: ["~/.omp/agent"]
+            "extraDirectories": [],
+            // Additional mcp.json files to merge into every provider session.
+            "importMcpFiles": [],
+            // Share discovered instructions, rules and skills index with providers that support it.
+            "injectInstructions": true,
+            // Share discovered MCP servers with providers that support MCP injection.
+            "injectMcp": true
+          },
+
+          "mcpServers": {
+            // Shared MCP servers injected into Codex, Claude Code, Antigravity, OpenCode and omp.
+            // "my-server": { "command": "npx", "args": ["-y", "my-mcp"], "env": {} }
+          },
+
           "chat": {
             // Sending while the agent works: "steer" the running turn or "queue" after it. ⌘↩ does the other.
             "followUp": "steer",

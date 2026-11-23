@@ -124,16 +124,17 @@ public actor AntigravitySession: ProviderSession {
 
     /// Loads `resumeID` or creates a session; reads its config options.
     private func open(_ client: AcpClient, config: SessionConfig, initialized: JSONValue) async throws -> String {
+        let mcpServers = AntigravityProtocol.mcpServers(config.mcpServers)
         if let resume = config.resumeID {
             isLoading = true
             defer { isLoading = false }
-            let params: JSONValue = ["sessionId": .string(resume), "cwd": .string(config.cwd), "mcpServers": []]
+            let params: JSONValue = ["sessionId": .string(resume), "cwd": .string(config.cwd), "mcpServers": mcpServers]
             if let loaded = try? await client.request("session/load", params) {
                 read(loaded["configOptions"], isNew: false)
                 return resume
             }
         }
-        var params: [String: JSONValue] = ["cwd": .string(config.cwd), "mcpServers": []]
+        var params: [String: JSONValue] = ["cwd": .string(config.cwd), "mcpServers": mcpServers]
         if let file = config.systemPromptFile,
            initialized["agentCapabilities"]?["_meta"]?["antigravity"]?["systemPrompt"]?["append"]?.boolValue == true,
            let text = try? String(contentsOfFile: file, encoding: .utf8), !text.isEmpty

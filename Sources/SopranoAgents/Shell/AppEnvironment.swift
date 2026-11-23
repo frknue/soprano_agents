@@ -86,6 +86,9 @@ struct AppSettings: Equatable, Sendable {
     /// Open-in-editor target id (`cursor`, `vscode`, `zed`, `xcode`, `finder`, …); nil = first installed.
     var editorApp: String?
 
+    /// Shared skills, commands, rules and MCP server configuration across all providers.
+    var resources = ResourceSettings()
+
     static let defaults = AppSettings()
 
     /// The engine's view of these settings.
@@ -103,7 +106,8 @@ struct AppSettings: Equatable, Sendable {
             codexPath: codexPath,
             claudePath: claudePath,
             opencodePath: opencodePath,
-            antigravityPath: antigravityPath
+            antigravityPath: antigravityPath,
+            resources: resources
         )
     }
 }

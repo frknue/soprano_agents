@@ -27,6 +27,7 @@ swift test
 | `Sources/SopranoAgentsCore/Providers/` (rest) | Providers | `LineProcess` (stdio JSON-lines transport); the omp driver, session, RPC client and event mapper; the OpenCode driver, server connection (`OpencodeServer`), session, protocol and event mapper; the Antigravity driver, session, protocol and event mapper on `AcpClient` (ACP JSON-RPC); `LineDiff`; model catalog, `generateJSON`. |
 | `Sources/SopranoAgentsCore/Engine/` | Engine | `AgentEngine` (state owner, observers, inbox lifecycle), `AgentEngine+Turns.swift` (sessions, sending, steering, queue, approvals, checkpoints, revert, diffs, titles, git actions), `AgentEngine+Files.swift` (workspace files) and `AgentEngine+Usage.swift` (usage history for the statistics board). `EngineTypes.swift` is contract. |
 | `Sources/SopranoAgentsCore/Files/` | Files | `WorkspaceFileService` (contract), `WorkspaceFileContent`, `WorkspaceFilePath` (the one escape check), `LiveWorkspaceFileService`. |
+| `Sources/SopranoAgentsCore/Resources/` | Resources | `ResourceModels` (`ResourceSettings`, `SharedSkill`, `SharedCommand`, `SharedRule`, `SharedMCPServer`, `ResolvedResources`), `ResourceCatalog` (discovery across `~/.config/soprano-agents/`, `~/.agents/skills`, `extraDirectories`, project overrides, `importMcpFiles`, inline `mcpServers`; per-provider MCP filtering, system-prompt appendix, shared command/skill prompt expansion). |
 | `Sources/SopranoAgentsCore/Usage/UsageStatistics.swift` | Contract | `UsageStatisticsService`, `UsagePeriod` (buckets), `UsageGroup`, `UsageTotals`, metric/part enums. |
 | `Sources/SopranoAgentsCore/Usage/` (rest) | Usage | `UsageHistory` / `UsageSummary` (bucketing, model filter, breakdowns), `UsageFolderName` (omp's session folder names), `OmpUsageStatistics` (`omp stats` sync + read-only `stats.db` query). |
 | `Sources/SopranoAgentsCore/Store/` | Engine | `JSONFileThreadStore`. |
@@ -529,10 +530,11 @@ is what "signed in" means.
 handed on in arrival order; other agent requests get `-32601`. An `ordered` request
 (`session/prompt`) also puts its response on that stream, so the turn ends only after the updates
 agy wrote before the answer have been read. `AntigravitySession`: `initialize`
-(protocol 1, no client file system or terminal), `session/load {sessionId, cwd}` for
+(protocol 1, no client file system or terminal), `session/load {sessionId, cwd, mcpServers}` for
 `providerThreadID` (the history replay is ignored; an unknown session starts fresh) or
-`session/new {cwd, mcpServers: []}` (`_meta.antigravity.systemPrompt.append` carries
-`SessionConfig.systemPromptFile` when agy offers it). The ACP session id is the conversation id.
+`session/new {cwd, mcpServers}` (`_meta.antigravity.systemPrompt.append` carries
+`SessionConfig.systemPromptFile` when agy offers it, and `mcpServers` carries shared MCP servers
+converted by `AntigravityProtocol.mcpServers`). The ACP session id is the conversation id.
 The selection goes in with `session/set_config_option` before each turn, only on change: `model`
 (slugs are agy's ids such as `gemini-4-neon`; `default` = the model agy picked for the new
 session), `thought_level` (the effort option) and `mode` (approval-required → `default`,

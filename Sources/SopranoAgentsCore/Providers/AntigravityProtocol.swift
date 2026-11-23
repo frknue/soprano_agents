@@ -101,6 +101,34 @@ public enum AntigravityProtocol {
         return "'\(value.replacingOccurrences(of: "'", with: "'\\''"))'"
     }
 
+    /// Serializes `MCPServerSpec` items into ACP v1's `mcpServers` parameter array.
+    public static func mcpServers(_ specs: [MCPServerSpec]) -> JSONValue {
+        .array(specs.map { spec in
+            switch spec.transport {
+            case let .stdio(command, args, env):
+                let envList = env.keys.sorted().map { key -> JSONValue in
+                    ["name": .string(key), "value": .string(env[key] ?? "")]
+                }
+                return [
+                    "name": .string(spec.name),
+                    "command": .string(command),
+                    "args": .array(args.map(JSONValue.string)),
+                    "env": .array(envList),
+                ]
+            case let .http(url, headers):
+                let headerList = headers.keys.sorted().map { key -> JSONValue in
+                    ["name": .string(key), "value": .string(headers[key] ?? "")]
+                }
+                return [
+                    "type": "http",
+                    "name": .string(spec.name),
+                    "url": .string(url),
+                    "headers": .array(headerList),
+                ]
+            }
+        })
+    }
+
     /// `initialize` params: ACP v1, no client file system or terminal (agy uses its own tools).
     static let initializeParams: JSONValue = [
         "protocolVersion": 1,

@@ -78,8 +78,12 @@ The installer never restarts a running Soprano Agents; the update applies on the
    drawer's. `+` adds a surface; with every tab closed, "Open a surface" offers Terminal (`T`),
    Files (`F`) and Diff (`D`).
 7. The ring next to Send shows how full the context window is; click it to compact the
-   conversation (or send `/compact`). Type `/` at the start of a line for omp's commands and
-   skills: ↑/↓ choose, Enter or Tab insert, Esc closes.
+   conversation (or send `/compact`). Type `/` at the start of a line for provider commands, shared
+   commands and skills: ↑/↓ choose, Enter or Tab insert, Esc closes. Shared skills, commands,
+   rules (`AGENTS.md`, `rules/*.md`) and MCP servers in `~/.config/soprano-agents/`,
+   `~/.agents/skills`, project overrides, or any folder/file configured in **Settings › Resources
+   & MCP** (`resources.extraDirectories`, `resources.importMcpFiles`, `mcpServers`) are shared
+   across all providers.
 8. The composer has omp's typing aids: misspellings and grammar problems are underlined (code,
    paths and identifiers are left alone; right-click for corrections), and omp predicts the word
    you are typing as grey ghost text — Tab accepts it with a space, → without. They follow omp's

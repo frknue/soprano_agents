@@ -26,6 +26,14 @@ All notable changes to Soprano Agents are documented here. The format follows
   titles, branch names and commit messages; `providers.opencodePath` if `opencode` is not on
   `PATH`. Settings → Providers shows each agent's status. Statistics, Accounts and word
   completion stay omp's.
+- Shared resources & MCP registry (**Settings › Resources & MCP**): skills, `/` commands,
+  rules (`AGENTS.md`, `RULES.md`, `rules/*.md`), and MCP servers discovered from
+  `~/.config/soprano-agents/`, `~/.agents/skills`, project overrides (`.soprano-agents/`,
+  `.agents/skills`), plus optional `resources.extraDirectories`, `resources.importMcpFiles` and
+  inline `mcpServers` in `settings.json`, are shared across `omp`, Codex, Claude Code, Antigravity
+  and OpenCode. Shared commands and `/skill:<name>` prompts appear in every provider's `/` menu,
+  instructions/skills are appended to sessions that support system-prompt injection, and MCP
+  servers are injected into Codex, Claude Code and Antigravity sessions automatically.
 - Claude Code threads via `claude --print --output-format stream-json --input-format stream-json`:
   the model picker (⇧⌘M) gets a Claude Code column with its live model catalog, reasoning efforts
   and Fast Mode; inline tool approvals (`can_use_tool`) and `AskUserQuestion` dialogs, Plan mode
