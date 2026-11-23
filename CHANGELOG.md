@@ -26,6 +26,17 @@ All notable changes to Soprano Agents are documented here. The format follows
   titles, branch names and commit messages; `providers.opencodePath` if `opencode` is not on
   `PATH`. Settings → Providers shows each agent's status. Statistics, Accounts and word
   completion stay omp's.
+- Antigravity threads for Google AI Pro and Ultra plans, the way T3 Code runs them: Soprano Agents
+  drives Google's Antigravity CLI (`agy acp`) with Antigravity's own agent and tools. The model
+  picker (⇧⌘M) gets an Antigravity column with the plan's models (Gemini, plus Claude and GPT
+  where the plan has them) and their thinking levels as Reasoning; edit and command approvals
+  appear inline, the permission modes apply, `/compact` and agy's other `/` commands work, and
+  Antigravity can write titles, branch names and commit messages (`textGeneration.provider`:
+  `antigravity`). Sign in under Settings › Providers › Antigravity › Google account: Sign in runs
+  `agy` in the terminal drawer, where you open Google's link and paste the code back; the plan
+  shows next to the version. `agy` is found on `PATH`, in omp's downloads, or at
+  `providers.antigravityPath`. Follow-ups queue instead of steering, and Edit from here is not
+  available on Antigravity threads.
 - Phone access, on by default: Soprano Agents serves a web app on your tailnet through Tailscale
   Serve (`https://<your-mac>.<tailnet>.ts.net/`), installable on the iPhone's Home Screen. Pair a
   phone in Settings › Phone (QR code or Copy pairing link; Revoke devices there). From the phone:

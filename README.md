@@ -2,12 +2,12 @@
 
 **A native macOS app for coding agents, in the Soprano family.**
 
-Soprano Agents gives the `omp` CLI (oh-my-pi) and OpenCode a native home in the Soprano family,
-colored by Soprano's themes: a thread inbox on the left, a centered chat lane with a floating
-composer, collapsible work logs, approvals and questions inline, per-turn diffs
-from hidden git checkpoints, worktrees, a terminal drawer and a diff panel on the right. It is a
-Swift 6 / AppKit app, not a web view: it talks to `omp` directly and to OpenCode's own
-background service, and runs no server of its own.
+Soprano Agents gives the `omp` CLI (oh-my-pi), OpenCode and Google's Antigravity CLI a native home
+in the Soprano family, colored by Soprano's themes: a thread inbox on the left, a centered chat
+lane with a floating composer, collapsible work logs, approvals and questions inline, per-turn
+diffs from hidden git checkpoints, worktrees, a terminal drawer and a diff panel on the right. It
+is a Swift 6 / AppKit app, not a web view: it talks to `omp` directly, to OpenCode's own
+background service and to `agy acp`, and runs no server of its own.
 
 ## Requirements
 
@@ -22,14 +22,24 @@ background service, and runs no server of its own.
   --service`; it starts it when needed), so OpenCode threads also show up in the `opencode` TUI.
   Its permission prompts and questions show up inline; every OpenCode model is in the model
   picker, its variants as Reasoning.
+- For a Google AI Pro or Ultra plan, Google's [Antigravity CLI](https://antigravity.google/docs/getting-started)
+  (`agy`), the way T3 Code runs it: Soprano Agents drives `agy acp` with Antigravity's own agent
+  and tools, so the plan's models (Gemini, and Claude/GPT where the plan has them) are in the model
+  picker under Antigravity, with their thinking levels as Reasoning, and its edit and command
+  approvals show up inline. If `agy` is not installed, the copy `omp` downloads for its
+  `antigravity-cli` provider (`~/.omp/antigravity-cli/bin`) is used. Sign in once in **Settings ›
+  Providers › Antigravity › Google account**: Sign in runs `agy` in the terminal drawer of the
+  selected project or thread; open its link, sign in with the plan's Google account, paste the code
+  back, then choose Check again. The sign-in stays in Soprano Agents' own Antigravity profile.
+  Antigravity threads queue follow-ups instead of steering, and cannot use Edit from here.
 - `git` for checkpoints, diffs and worktrees; `gh` for creating pull requests.
 
 Apps started from the Dock get a minimal `PATH`, so Soprano Agents also looks in
 `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`, `~/.bun/bin`, `~/.cargo/bin`,
-`~/.npm-global/bin` and `~/.opencode/bin` (OpenCode's installer). If `omp`
-or `opencode` lives elsewhere, set its path in **Settings › Providers** (`providers.ompPath`,
-`providers.opencodePath`). The same page shows each agent's version and health; new threads start
-on omp unless you pick another default agent there.
+`~/.npm-global/bin` and `~/.opencode/bin` (OpenCode's installer). If `omp`, `opencode` or `agy`
+lives elsewhere, set its path in **Settings › Providers** (`providers.ompPath`,
+`providers.opencodePath`, `providers.antigravityPath`). The same page shows each agent's version
+and health; new threads start on omp unless you pick another default agent there.
 
 ## Install and build
 

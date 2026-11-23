@@ -20,11 +20,13 @@ final class ExecutablePaths: @unchecked Sendable {
     private let lock = NSLock()
     private var ompPath: String?
     private var opencodePath: String?
+    private var antigravityPath: String?
 
     func update(_ settings: EngineSettings) {
         lock.withLock {
             ompPath = settings.ompPath
             opencodePath = settings.opencodePath
+            antigravityPath = settings.antigravityPath
         }
     }
 
@@ -37,6 +39,11 @@ final class ExecutablePaths: @unchecked Sendable {
     var opencode: String? {
         lock.withLock { opencodePath }
     }
+
+    /// `providers.antigravityPath`, or nil to search PATH and omp's downloads.
+    var antigravity: String? {
+        lock.withLock { antigravityPath }
+    }
 }
 
 /// The accounts each new omp process starts with, read from the vendored `AccountLaunchState`
@@ -48,8 +55,8 @@ enum AccountLaunchBridge {
     }
 }
 
-/// Builds the engine the app runs with: JSON-file store, git CLI, the omp and OpenCode drivers,
-/// omp's usage statistics and omp's typing aids.
+/// Builds the engine the app runs with: JSON-file store, git CLI, the omp, OpenCode and
+/// Antigravity drivers, omp's usage statistics and omp's typing aids.
 @MainActor
 enum EngineFactory {
     /// The executable overrides the drivers read on every spawn; the app delegate keeps them current.
@@ -67,6 +74,10 @@ enum EngineFactory {
                     launchAdjustments: { AccountLaunchBridge.ompAdjustments() }
                 ),
                 .opencode: OpencodeDriver(executablePath: { paths.opencode }),
+                .antigravity: AntigravityDriver(
+                    executablePath: { paths.antigravity },
+                    profile: AntigravityProtocol.profileDirectory(dataDirectory: dataDirectory)
+                ),
             ],
             git: LiveGitService(),
             store: JSONFileThreadStore(directory: dataDirectory),

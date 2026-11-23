@@ -207,15 +207,59 @@ extension SettingsController {
             let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
             if trimmed.isEmpty { self?.remove(["providers", key]) } else { self?.write(trimmed, at: ["providers", key]) }
         }
-        return form.section(kind.displayName, [
+        let found = kind == .antigravity ? "Leave empty to find it on PATH or in omp's downloads." : "Leave empty to find it on PATH."
+        var rows = [
             form.row("Status", description: Self.statusDescription(status), control: form.group([badge, check], spacing: 10)),
             form.row(
                 "Executable",
-                description: "Path to the \(command) CLI. Leave empty to find it on PATH.",
+                description: "Path to the \(command) CLI. \(found)",
                 reset: reset(["providers", key], isDefault: configured == nil),
                 control: path
             ),
-        ])
+        ]
+        if kind == .antigravity { rows.append(antigravitySignInRow(form: form)) }
+        return form.section(kind.displayName, rows)
+    }
+
+    /// The drawer command for Antigravity's Google sign-in (`AntigravityProtocol.loginCommand`)
+    /// with the agy the provider uses (`providers.antigravityPath`, else PATH and the tool
+    /// directories, else omp's downloads), so the drawer's own PATH does not matter. nil when
+    /// agy is not found.
+    nonisolated static func antigravitySignInCommand(
+        agyPath: String?,
+        profile: String,
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        home: String = NSHomeDirectory()
+    ) -> String? {
+        guard let agy = AntigravityProtocol.locateExecutable(explicitPath: agyPath, environment: environment, home: home) else { return nil }
+        return AntigravityProtocol.loginCommand(executable: agy, profile: profile, base: environment)
+    }
+
+    /// "Google account": signed in when the app's Antigravity profile holds a Google sign-in.
+    /// Sign in runs `antigravitySignInCommand` in the terminal drawer of the selected workspace:
+    /// the user opens Google's link, signs in and pastes the code back.
+    private func antigravitySignInRow(form: SettingsForm) -> NSView {
+        let profile = AntigravityProtocol.profileDirectory(dataDirectory: AppPaths.dataDirectory())
+        let signedIn = AntigravityProtocol.isSignedIn(profile: profile)
+        let main = parentWindow?.windowController as? MainWindowController
+        let workspace = main?.state.workspace
+        let command = Self.antigravitySignInCommand(agyPath: settings.antigravityPath, profile: profile)
+        let description = if command == nil {
+            "agy was not found: install Google's Antigravity CLI or set its path above."
+        } else if workspace == nil {
+            "Select a project or thread first: sign-in runs in its terminal."
+        } else if signedIn {
+            "Signed in. Sign in again to use another Google account."
+        } else {
+            "Use the Google account of your Google AI plan. Sign in runs agy in the terminal: open its link, sign in, paste the code back, then Check again."
+        }
+        let signIn = form.button(signedIn ? "Sign in again" : "Sign in…", size: .xs) { [weak self] in
+            guard let main, let workspace = main.state.workspace, let command else { return }
+            self?.close()
+            main.workspace.chat.terminal.run(command: command, in: workspace)
+        }
+        signIn.isEnabled = workspace != nil && command != nil
+        return form.row("Google account", description: description, control: signIn)
     }
 
     private func providersPage(_ form: SettingsForm) -> [NSView] {

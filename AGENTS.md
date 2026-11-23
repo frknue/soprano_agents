@@ -64,7 +64,8 @@ spec, harness. Keep it current when a seam, binding, or harness option changes.
 
 - `Sources/SopranoAgentsCore/` — Foundation only: domain models, `AgentEngine` (state owner),
   omp driver/session (`omp --mode rpc-ui`), OpenCode driver/session (`Opencode*`: v2 HTTP API
-  and event stream on OpenCode's background service), git (`GitRunner`, `LiveGitService`: checkpoints,
+  and event stream on OpenCode's background service), Antigravity driver/session (`Antigravity*`:
+  `agy acp` over `AcpClient`), git (`GitRunner`, `LiveGitService`: checkpoints,
   diffs, worktrees, commit/push/PR), JSON-file store.
 - `Sources/SopranoAgents/Theme/` — `Palette` (tokens derived from the Soprano theme), typography,
   metrics, shared controls.

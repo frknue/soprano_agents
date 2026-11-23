@@ -8,11 +8,15 @@ public enum ProviderKind: String, Codable, Sendable, CaseIterable, Hashable {
     /// OpenCode's v2 HTTP API on its background service (`opencode serve --service`), with the
     /// server-sent event stream.
     case opencode
+    /// Google's Antigravity CLI as an ACP agent (`agy acp`, JSON-RPC over stdio) with its own
+    /// agent and tools, signed in with a Google AI plan.
+    case antigravity
 
     public var displayName: String {
         switch self {
         case .omp: "omp"
         case .opencode: "OpenCode"
+        case .antigravity: "Antigravity"
         }
     }
 
@@ -21,6 +25,7 @@ public enum ProviderKind: String, Codable, Sendable, CaseIterable, Hashable {
         switch self {
         case .omp: "omp"
         case .opencode: "opencode"
+        case .antigravity: "agy"
         }
     }
 

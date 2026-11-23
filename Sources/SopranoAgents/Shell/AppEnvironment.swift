@@ -40,9 +40,10 @@ struct AppSettings: Equatable, Sendable {
     /// nil = the provider's own configured model (`ModelSelection.configuredDefaultModel`).
     var defaultModel: String?
     var defaultRuntimeMode: RuntimeMode = .fullAccess
-    /// Executable overrides; nil = find `omp` / `opencode` on PATH.
+    /// Executable overrides; nil = find `omp` / `opencode` / `agy` on PATH.
     var ompPath: String?
     var opencodePath: String?
+    var antigravityPath: String?
 
     /// The agent that writes thread titles, commit messages and branch names.
     var textGenerationProvider: ProviderKind = .omp
@@ -97,7 +98,8 @@ struct AppSettings: Equatable, Sendable {
             worktreesDirectory: worktreesDirectory,
             generateTitles: generateTitles,
             ompPath: ompPath,
-            opencodePath: opencodePath
+            opencodePath: opencodePath,
+            antigravityPath: antigravityPath
         )
     }
 }

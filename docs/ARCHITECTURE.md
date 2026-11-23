@@ -1,11 +1,11 @@
 # Soprano Agents architecture
 
-Soprano Agents is a native macOS GUI for coding agents in the Soprano family, `omp` (oh-my-pi) and
-OpenCode, colored by Soprano's themes: a thread inbox on the left, a centered chat lane with a
-floating composer, collapsible work logs, per-turn diffs from hidden git checkpoints, a terminal
-drawer and a right panel. Swift 6 + programmatic AppKit (no SwiftUI, no storyboards), SPM, macOS
-14+. The app talks to the `omp` CLI directly and to OpenCode's own background service over its
-HTTP API; it runs no server of its own.
+Soprano Agents is a native macOS GUI for coding agents in the Soprano family, `omp` (oh-my-pi),
+OpenCode and Google's Antigravity CLI, colored by Soprano's themes: a thread inbox on the left, a
+centered chat lane with a floating composer, collapsible work logs, per-turn diffs from hidden git
+checkpoints, a terminal drawer and a right panel. Swift 6 + programmatic AppKit (no SwiftUI, no
+storyboards), SPM, macOS 14+. The app talks to the `omp` CLI directly, to OpenCode's own
+background service over its HTTP API and to `agy acp` over ACP; it runs no server of its own.
 
 ## Toolchain
 
@@ -24,7 +24,7 @@ swift test
 |---|---|---|
 | `Sources/SopranoAgentsCore/Models/` | Contract | Domain types: `Project`, `AgentThread`, `Turn`, `TurnItem(Kind)`, approvals, user input, `ModelSelection`, `ProviderStatus`, `ThreadStatus`/`InboxSection`, `DurationText`, `JSONValue`. Foundation only. |
 | `Sources/SopranoAgentsCore/Providers/ProviderSession.swift` | Contract | `ProviderDriver`, `ProviderSession`, `ProviderEvent`, `SessionConfig`, `TurnInput`. |
-| `Sources/SopranoAgentsCore/Providers/` (rest) | Providers | `LineProcess` (stdio JSON-lines transport); the omp driver, session, RPC client and event mapper; the OpenCode driver, server connection (`OpencodeServer`), session, protocol and event mapper; model catalog, `generateJSON`. |
+| `Sources/SopranoAgentsCore/Providers/` (rest) | Providers | `LineProcess` (stdio JSON-lines transport); the omp driver, session, RPC client and event mapper; the OpenCode driver, server connection (`OpencodeServer`), session, protocol and event mapper; the Antigravity driver, session, protocol and event mapper on `AcpClient` (ACP JSON-RPC); `LineDiff`; model catalog, `generateJSON`. |
 | `Sources/SopranoAgentsCore/Engine/` | Engine | `AgentEngine` (state owner, observers, inbox lifecycle), `AgentEngine+Turns.swift` (sessions, sending, steering, queue, approvals, checkpoints, revert, diffs, titles, git actions), `AgentEngine+Files.swift` (workspace files) and `AgentEngine+Usage.swift` (usage history for the statistics board). `EngineTypes.swift` is contract. |
 | `Sources/SopranoAgentsCore/Files/` | Files | `WorkspaceFileService` (contract), `WorkspaceFileContent`, `WorkspaceFilePath` (the one escape check), `LiveWorkspaceFileService`. |
 | `Sources/SopranoAgentsCore/Usage/UsageStatistics.swift` | Contract | `UsageStatisticsService`, `UsagePeriod` (buckets), `UsageGroup`, `UsageTotals`, metric/part enums. |
@@ -254,9 +254,9 @@ Engine behavior:
 ### Providers (Core/Providers)
 `ProviderDriver` creates `ProviderSession`s, probes the CLI (`probe()` → version, health,
 models), runs one-shot `generateJSON`, and lists commands without a conversation
-(`commands(directory:)`). `OmpDriver` and `OpencodeDriver` implement it, one per
-`ProviderKind` (`.omp`, `.opencode`; declaration order is display order); the seam keeps the
-engine testable against a fake driver.
+(`commands(directory:)`). `OmpDriver`, `OpencodeDriver` and `AntigravityDriver` implement it, one
+per `ProviderKind` (`.omp`, `.opencode`, `.antigravity`; declaration order is display order); the
+seam keeps the engine testable against a fake driver.
 
 **omp** (oh-my-pi) — `omp --mode rpc-ui --cwd <cwd> --approval-mode <mode>
 [--model <provider/id>] [--thinking <level>] [--resume <session file>]`, one process per thread
@@ -461,6 +461,62 @@ configured", then "<name> · <providerID>"; none → unauthenticated). Traces:
 (reject all), `opencode-decline-turn.jsonl`, `opencode-question-turn.jsonl`,
 `opencode-subagent-turn.jsonl`, `opencode-compaction.jsonl` (OpenCode 2.2.5).
 
+**Antigravity** — Google's Antigravity CLI as an ACP agent: `agy acp --gemini-dir <data>/antigravity
+--app-data-dir antigravity-acp`, one process per thread, with agy's own agent, system prompt and
+tools (omp's `antigravity-cli` provider instead puts omp's prompt and tools on agy, which Google
+answers with `429 RESOURCE_EXHAUSTED` for some of omp's instructions). Path from
+`EngineSettings.antigravityPath`, else PATH and the tool directories, else the newest
+`~/.omp/antigravity-cli/bin/<version>/agy` omp downloaded. The app keeps its own profile
+(`AntigravityProtocol.profileDirectory`): its Google sign-in, conversations and settings never
+touch `~/.gemini` or omp's. Children get `GEMINI_HOME=<profile>`, `SSH_CONNECTION` (agy 1.5 then
+stores the sign-in in a file under the profile instead of one shared keychain entry),
+`AGY_ACP_FORCE_FILE_STORAGE=1`, `AGY_CLI_DISABLE_AUTO_UPDATE=1`, and no `GEMINI_API_KEY` /
+`GOOGLE_*` credential variables. Sign-in is `agy acp … --login` in the terminal drawer (Settings ›
+Providers › Antigravity › Google account): it prints a Google link, the user pastes back the code
+the callback page shows, the token lands in `antigravity-acp/antigravity-oauth-token`; that file
+is what "signed in" means.
+`AcpClient` speaks ACP: JSON-RPC 2.0 lines, requests matched by numeric id (`error` →
+`ProviderError.rpc`), notifications and the agent's own requests (`session/request_permission`)
+handed on in arrival order; other agent requests get `-32601`. An `ordered` request
+(`session/prompt`) also puts its response on that stream, so the turn ends only after the updates
+agy wrote before the answer have been read. `AntigravitySession`: `initialize`
+(protocol 1, no client file system or terminal), `session/load {sessionId, cwd}` for
+`providerThreadID` (the history replay is ignored; an unknown session starts fresh) or
+`session/new {cwd, mcpServers: []}` (`_meta.antigravity.systemPrompt.append` carries
+`SessionConfig.systemPromptFile` when agy offers it). The ACP session id is the conversation id.
+The selection goes in with `session/set_config_option` before each turn, only on change: `model`
+(slugs are agy's ids such as `gemini-4-neon`; `default` = the model agy picked for the new
+session), `thought_level` (the effort option) and `mode` (approval-required → `default`,
+auto-accept-edits → `accept-edits`, auto and full-access → `auto`; full access also answers every
+permission request itself). Turns: `session/prompt` (text with attachment paths, images up to
+10 MB as image blocks); its answer, read in order behind the turn's updates, ends the turn it
+answers (`cancelled` → interrupted, `refusal` → failed, an error → failed, else completed; a late
+answer to a turn Stop already ended is ignored). No steering over ACP: `steer` refuses with `noActiveTurn`, so
+follow-ups queue. Stop = `session/cancel` (open permission requests answered `cancelled`); a turn
+agy has not ended 5 s later ends as interrupted and that agy is terminated (`sessionEnded`), so its
+unanswered prompt and late updates never reach the next turn; the next message resumes the
+conversation in a new process. `/compact` runs agy's command as a turn, its
+usage report (the summary call, not the context fill) skipped, then a "Context compacted" notice.
+Rollback refuses (agy cannot rewind an ACP conversation; each turn reports
+`antigravity-turn-<n>` so Edit from here reaches the refusal), and there are no subagents or side
+questions. Events (`AntigravityEventMapper`, message and thought ids `t<turn>/message-<n>`, tool
+rows by `toolCallId`): `agent_message_chunk` → assistant text (a tool call or thought starts the
+next message; the turn's last one is its answer), `agent_thought_chunk` → reasoning,
+`tool_call`/`tool_call_update` merged → `execute` command (`rawInput.CommandLine`,
+`rawOutput.output` without agy's "Created At…" preamble, `exit_code`), `edit`/`delete`/`move`
+file change (`diff` content old/new text → `LineDiff` hunks), `read` "Read <path>", `search`,
+other tools by agy's title; `plan` → one "Updated the plan" row; `usage_update {used, size}` →
+context fill; `available_commands_update` → commands (`/<name> `). Approvals: `session/
+request_permission` → `approvalRequested` (kind and detail from the tool call: command line or
+file path); accept → the `allow_once` option, acceptForSession → `allow_always` (else
+`allow_once`), decline → `reject_once`, cancel → `cancelled` plus Stop. Probe: `agy --version`;
+no sign-in → unauthenticated; else a throwaway `session/new` in an empty temporary folder gives
+the catalog (first `default` "<model> · default", then every `model` option value; efforts from
+`models.availableModels` `<model>-<effort>` ids) and the plan (`_meta.antigravity.tier.name`,
+shown after the version). Traces: `Fixtures/antigravity-tool-turn.jsonl` (read, approved edit and
+command), `antigravity-decline-cancel.jsonl` (declined command, then a cancelled turn), agy
+1.5.14, `>>` lines sent and `<<` lines received.
+
 Context, compaction and commands:
 - omp: `get_available_commands` after the handshake, then `available_commands_update`
   (`{name, source, aliases?, description?, input?{hint}, subcommands?}`); skills are
@@ -474,13 +530,16 @@ Context, compaction and commands:
   (`/skill:<id> `) at start and after a turn once `command.updated`/`skill.updated` arrived.
   `POST …/compact` runs as a turn (`session.compaction.ended` → notice, the compaction's inbox
   id becomes the turn id); the context fill updates with the next step.
+- Antigravity: `available_commands_update` at session start and after changes; `/compact` is
+  agy's own command run as a turn.
 - Traces: `omp-commands-compact.jsonl`, `opencode-compaction.jsonl`.
 
 Text generation: omp `-p --no-session --no-tools --no-extensions --no-skills --no-rules
 --no-context-files --no-lsp [--model <provider/id>] --thinking low` (prompt plus schema on stdin,
 first JSON object of stdout); OpenCode `POST /api/experimental/generate/text {prompt, model?}`
-(no session, no tools; first JSON object of `data.text`). `textGeneration.provider` picks the
-agent. 180 s timeout.
+(no session, no tools; first JSON object of `data.text`); Antigravity a throwaway `agy acp`
+session in an empty temporary folder (permission requests declined; first JSON object of the
+streamed answer). `textGeneration.provider` picks the agent. 180 s timeout.
 
 ### Accounts (`Vendored/Accounts`, `Views/Accounts`)
 Soprano's accounts layer is vendored unchanged. `AccountsController.shared.start()` runs only in
@@ -688,12 +747,12 @@ buttons, and the snapshot harness runs them with `--perform <id>`. `CommandConte
 ### Settings (`Shell/AppEnvironment.swift`, `SettingsResolution.swift`, `SettingsFile.swift`)
 `~/.config/soprano-agents/settings.json` (JSONC, `SOPRANO_AGENTS_CONFIG` overrides), live
 reloaded; bad values become warnings. Keys: `theme`, `agents.{defaultProvider, defaultModel,
-defaultRuntimeMode}`, `providers.{ompPath, opencodePath}`, `textGeneration.{provider, model,
+defaultRuntimeMode}`, `providers.{ompPath, opencodePath, antigravityPath}`, `textGeneration.{provider, model,
 titles}`, `worktrees.{directory, branchPrefix}`, `projects.directories`,
 `chat.{followUp, width, workLog}`, `notifications.{enabled, sound}`, `remote.{enabled, port,
 httpsPort, launchAtLogin, preventSleep, push}`, `editor.app`,
 `keybindings.{prefixKey, prefixTimeoutMs, bindings}`. `defaultProvider` /
-`textGeneration.provider` are `omp` or `opencode` (default omp); a model setting names a model of
+`textGeneration.provider` are `omp`, `opencode` or `antigravity` (default omp); a model setting names a model of
 that agent, absent = that agent's configured model. `AppSettings.engineSettings` feeds
 `AgentEngine.settings`. Window geometry, panel widths and per-thread UI state stay in
 `UserDefaults`.
@@ -991,9 +1050,9 @@ titlebar strip start a window drag offscreen instead; use them below the header.
 UI with it and `read` the PNG; they do not launch the GUI. `--work-log` overrides `chat.workLog`
 in memory (never `--perform timeline.toggleWorkLog`: that writes settings.json); the `editing`
 fixture is a running turn with an applied edit and a write whose code is still streaming in.
-The demo fixture also has an OpenCode status and one OpenCode thread ("Release checklist for
-2.4", pinned): `--perform thread.previous` five times, then `--perform modelPicker.toggle` shows
-the picker on it, with the omp tile locked because the thread has turns.
+The demo fixture also has OpenCode and Antigravity statuses and one OpenCode thread ("Release
+checklist for 2.4", pinned): `--perform thread.previous` five times, then `--perform
+modelPicker.toggle` shows the picker on it, with the omp tile locked because the thread has turns.
 
 The demo fixture's thread reports 124k of 200k context tokens and the engine remembers an omp
 command list for it and the `app` project: `--perform composer.focus --type "/re"` opens the

@@ -45,6 +45,7 @@ enum DemoFixtures {
         let engine = AgentEngine(environment: environment)
         engine.setProviderStatus(ProviderStatus(kind: .omp, health: .ready, version: "18.14.0", models: ompModels))
         engine.setProviderStatus(ProviderStatus(kind: .opencode, health: .ready, version: "2.2.5", models: opencodeModels))
+        engine.setProviderStatus(ProviderStatus(kind: .antigravity, health: .ready, version: "1.5.14 · Google AI Pro", models: antigravityModels))
         // The `/` menu's list for omp in the demo thread's worktree and in the app project (drafts).
         for directory in [demoWorktree, "/Users/demo/code/app"] {
             engine.rememberCommands(ompCommands, provider: .omp, workingDirectory: directory)
@@ -207,6 +208,20 @@ enum DemoFixtures {
         ]
         return [ProviderModel(slug: ModelSelection.configuredDefaultModel, name: "Opus 5.5 · configured", isDefault: true, options: [efforts])]
             + entries.map { ProviderModel(slug: $0.0, name: $0.1, options: [efforts]) }
+    }()
+
+    /// A slice of Antigravity's catalog as `session/new` reports it (agy's own ids and names),
+    /// each model's thinking levels as the effort option.
+    static let antigravityModels: [ProviderModel] = {
+        let gemini = ProviderCatalog.effortOption(["low", "medium", "high", "xhigh"], default: "high")
+        let flash = ProviderCatalog.effortOption(["low", "medium", "high"], default: "high")
+        return [
+            ProviderModel(slug: ModelSelection.configuredDefaultModel, name: "Gemini 4 Neon · default", isDefault: true, options: [gemini]),
+            ProviderModel(slug: "gemini-4-neon", name: "Gemini 4 Neon", options: [gemini]),
+            ProviderModel(slug: "gemini-4-hydrogen", name: "Gemini 4 Hydrogen", options: [gemini]),
+            ProviderModel(slug: "gemini-3.8-flash", name: "Gemini 3.8 Flash", options: [flash]),
+            ProviderModel(slug: "claude-opus-5-5", name: "Claude Opus 5.5", options: [flash]),
+        ]
     }()
 
     static func threads(_ now: Date) -> [AgentThread] {

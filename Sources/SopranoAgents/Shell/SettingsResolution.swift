@@ -107,11 +107,12 @@ enum SettingsResolver {
         }
 
         if let providers = section("providers", in: root, warn: warn) {
-            for key in providers.keys.sorted() where !["ompPath", "opencodePath"].contains(key) {
+            for key in providers.keys.sorted() where !["ompPath", "opencodePath", "antigravityPath"].contains(key) {
                 warn("Unknown setting \"providers.\(key)\".")
             }
             result.settings.ompPath = optionalPath(providers["ompPath"], key: "providers.ompPath", warn: warn) ?? result.settings.ompPath
             result.settings.opencodePath = optionalPath(providers["opencodePath"], key: "providers.opencodePath", warn: warn) ?? result.settings.opencodePath
+            result.settings.antigravityPath = optionalPath(providers["antigravityPath"], key: "providers.antigravityPath", warn: warn) ?? result.settings.antigravityPath
         }
 
         if let generation = section("textGeneration", in: root, warn: warn) {
@@ -326,7 +327,7 @@ enum SettingsResolver {
         (value as? String).flatMap(ProviderKind.init(rawValue:))
     }
 
-    /// `"omp" or "opencode"`.
+    /// `"omp", "opencode" or "antigravity"`.
     private static var knownProviders: String {
         let names = ProviderKind.allCases.map { "\"\($0.rawValue)\"" }
         return names.dropLast().joined(separator: ", ") + " or " + names.last!
