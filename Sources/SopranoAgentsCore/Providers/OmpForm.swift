@@ -159,7 +159,9 @@ public struct OmpForm: Sendable, Hashable {
             let text = given.map { $0.joined(separator: "\n") } ?? field.value
             if case let .input(type) = field.kind, type == "number" || type == "range" {
                 let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-                if let number = Double(trimmed) { data[field.name] = .number(number) }
+                // JSON has no NaN or infinity ("nan", "inf" parse as Double): leave those out
+                // like an empty field instead of a frame that cannot be encoded.
+                if let number = Double(trimmed), number.isFinite { data[field.name] = .number(number) }
                 continue
             }
             data[field.name] = .string(text)

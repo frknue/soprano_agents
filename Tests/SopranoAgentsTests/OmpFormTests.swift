@@ -76,6 +76,12 @@ struct OmpFormTests {
         #expect(form.data(answers: ["a": []]) == ["a": "x"])
     }
 
+    @Test func aNumberJSONCannotCarryIsLeftOutLikeAnEmptyField() {
+        #expect(Self.form.data(answers: ["ttl_days": ["nan"]])["ttl_days"] == nil)
+        #expect(Self.form.data(answers: ["ttl_days": ["inf"]])["ttl_days"] == nil)
+        #expect(Self.form.data(answers: ["ttl_days": ["12.5"]])["ttl_days"] == .number(12.5))
+    }
+
     @Test func aGroupWithAnOptionLabelledOtherTakesNoExtraAnswer() {
         let form = OmpForm(html: #"<form><label><input type="radio" name="a" value="x"> X</label><label><input type="radio" name="a" value="o"> Other</label></form>"#)!
 

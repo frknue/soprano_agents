@@ -230,7 +230,13 @@ public actor OmpSession: ProviderSession {
         guard let request = pending.removeValue(forKey: id) else { return }
         let (frame, followUps) = Self.response(to: request, answers: answers)
         fieldWalk = followUps.isEmpty ? nil : (request, followUps)
-        try? await client?.send(frame)
+        do {
+            try await client?.send(frame)
+        } catch {
+            // An answer that could not be sent must not leave omp waiting on the dialog.
+            fieldWalk = nil
+            try? await client?.send(OmpProtocol.uiCancel(id: id))
+        }
     }
 
     /// The `extension_ui_response` for a dialog: `ask` → `answers`; `form` → the submitted
