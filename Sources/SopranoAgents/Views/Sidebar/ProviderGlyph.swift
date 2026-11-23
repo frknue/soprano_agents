@@ -12,6 +12,7 @@ enum ProviderGlyph {
         let image = switch kind {
         case .omp: renderPi(size: size)
         case .codex: renderCodex(size: size)
+        case .claude: renderClaude(size: size)
         case .antigravity: renderArch(size: size)
         case .opencode: renderOpencode(size: size)
         }
@@ -46,6 +47,27 @@ enum ProviderGlyph {
             let dot = NSBezierPath(ovalIn: NSRect(x: center.x - inner, y: center.y - inner, width: inner * 2, height: inner * 2))
             NSColor.black.setFill()
             dot.fill()
+            return true
+        }
+    }
+
+    /// Claude Code's mark: an eight-ray starburst spark with rounded caps, crisp at 14–20 pt.
+    private static func renderClaude(size: CGFloat) -> NSImage {
+        NSImage(size: NSSize(width: size, height: size), flipped: false) { rect in
+            let stroke = max(1.4, size * 0.13)
+            let radius = (min(rect.width, rect.height) - stroke) * 0.44
+            let center = NSPoint(x: rect.midX, y: rect.midY)
+            let path = NSBezierPath()
+            for index in 0..<8 {
+                let angle = CGFloat(index) * (.pi / 4)
+                let length = index.isMultiple(of: 2) ? radius : radius * 0.78
+                path.move(to: center)
+                path.line(to: NSPoint(x: center.x + cos(angle) * length, y: center.y + sin(angle) * length))
+            }
+            path.lineWidth = stroke
+            path.lineCapStyle = .round
+            NSColor.black.setStroke()
+            path.stroke()
             return true
         }
     }

@@ -7,6 +7,8 @@ public enum ProviderKind: String, Codable, Sendable, CaseIterable, Hashable {
     case omp
     /// OpenAI's Codex CLI as an app-server (`codex app-server --stdio`, JSON-RPC 2.0 over stdio).
     case codex
+    /// Anthropic's Claude Code CLI (`claude --output-format stream-json --input-format stream-json`).
+    case claude
     /// Google's Antigravity CLI as an ACP agent (`agy acp`, JSON-RPC over stdio) with its own
     /// agent and tools, signed in with a Google AI plan.
     case antigravity
@@ -18,6 +20,7 @@ public enum ProviderKind: String, Codable, Sendable, CaseIterable, Hashable {
         switch self {
         case .omp: "omp"
         case .codex: "Codex"
+        case .claude: "Claude Code"
         case .antigravity: "Antigravity"
         case .opencode: "OpenCode"
         }
@@ -28,6 +31,7 @@ public enum ProviderKind: String, Codable, Sendable, CaseIterable, Hashable {
         switch self {
         case .omp: "omp"
         case .codex: "codex"
+        case .claude: "claude"
         case .antigravity: "agy"
         case .opencode: "opencode"
         }
@@ -53,6 +57,17 @@ public enum ProviderKind: String, Codable, Sendable, CaseIterable, Hashable {
                 supportsHostTools: true
             )
         case .codex:
+            ProviderCapabilities(
+                supportsSteer: true,
+                supportsRollback: true,
+                supportsPlanMode: true,
+                supportsNativeSubagents: true,
+                supportsNativeSideQuestions: false,
+                supportsMCPInjection: true,
+                supportsSystemPromptAppend: true,
+                supportsHostTools: false
+            )
+        case .claude:
             ProviderCapabilities(
                 supportsSteer: true,
                 supportsRollback: true,

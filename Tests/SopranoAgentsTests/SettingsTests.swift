@@ -71,8 +71,8 @@ struct SettingsTests {
         #expect(resolved.keybindings.prefixTimeoutMs == 300)
         #expect(resolved.keybindings.overrides.isEmpty)
         #expect(resolved.issues.count == 13)
-        #expect(resolved.issues.map(\.message).contains("agents.defaultProvider must be \"omp\", \"codex\", \"antigravity\" or \"opencode\"."))
-        #expect(resolved.issues.map(\.message).contains("textGeneration.provider must be \"omp\", \"codex\", \"antigravity\" or \"opencode\"."))
+        #expect(resolved.issues.map(\.message).contains("agents.defaultProvider must be \"omp\", \"codex\", \"claude\", \"antigravity\" or \"opencode\"."))
+        #expect(resolved.issues.map(\.message).contains("textGeneration.provider must be \"omp\", \"codex\", \"claude\", \"antigravity\" or \"opencode\"."))
         #expect(resolved.issues.allSatisfy { $0.severity == .warning })
     }
 

@@ -182,11 +182,11 @@ keeping your comments.
 | Key | Default | |
 |---|---|---|
 | `theme` | `"soprano"` | `soprano` (follow Soprano's theme and appearance) or a Soprano theme id (`folio` follows macOS, `folio-paper`, `folio-ink`, `nord`, …) |
-| `agents.defaultProvider` | `"omp"` | `omp`, `codex`, `antigravity` or `opencode`: the agent new threads start with |
-| `agents.defaultModel` | the agent's configured model | model id `provider/id`, e.g. `anthropic/claude-opus-5-5` (omp), `gpt-5.6-sol` (Codex) or `claude-agent/opus` (OpenCode) |
+| `agents.defaultProvider` | `"omp"` | `omp`, `codex`, `claude`, `antigravity` or `opencode`: the agent new threads start with |
+| `agents.defaultModel` | the agent's configured model | model id `provider/id`, e.g. `anthropic/claude-opus-5-5` (omp), `gpt-5.6-sol` (Codex), `opus` (Claude Code) or `claude-agent/opus` (OpenCode) |
 | `agents.defaultRuntimeMode` | `"full-access"` | `approval-required`, `auto-accept-edits`, `auto`, `full-access` |
-| `providers.ompPath` / `.codexPath` / `.antigravityPath` / `.opencodePath` | found on `PATH` | path to the provider CLI executable |
-| `textGeneration.provider` | `"omp"` | `omp`, `codex`, `antigravity` or `opencode`: the agent that writes titles, commit messages, branch names |
+| `providers.ompPath` / `.codexPath` / `.claudePath` / `.antigravityPath` / `.opencodePath` | found on `PATH` | path to the provider CLI executable |
+| `textGeneration.provider` | `"omp"` | `omp`, `codex`, `claude`, `antigravity` or `opencode`: the agent that writes titles, commit messages, branch names |
 | `textGeneration.model` / `.titles` | that agent's configured model / `true` | the model for them; `titles: false` keeps first-message titles |
 | `worktrees.directory` | `~/.soprano-agents/worktrees` | new worktrees go to `<directory>/<repo>/<branch>` |
 | `worktrees.branchPrefix` | `"soprano"` | `soprano/fix-login-error` |

@@ -45,6 +45,7 @@ enum DemoFixtures {
         let engine = AgentEngine(environment: environment)
         engine.setProviderStatus(ProviderStatus(kind: .omp, health: .ready, version: "18.14.0", models: ompModels))
         engine.setProviderStatus(ProviderStatus(kind: .codex, health: .ready, version: "0.144.6 · ChatGPT Pro", models: codexModels))
+        engine.setProviderStatus(ProviderStatus(kind: .claude, health: .ready, version: "2.1.325 · Claude Max", models: claudeModels))
         engine.setProviderStatus(ProviderStatus(kind: .antigravity, health: .ready, version: "1.5.14 · Google AI Pro", models: antigravityModels))
         engine.setProviderStatus(ProviderStatus(kind: .opencode, health: .ready, version: "2.2.5", models: opencodeModels))
         // The `/` menu's list for omp in the demo thread's worktree and in the app project (drafts).
@@ -206,6 +207,19 @@ enum DemoFixtures {
             ProviderModel(slug: "gpt-5.6-sol", name: "GPT-5.6-Sol", options: [efforts, fast]),
             ProviderModel(slug: "gpt-5.4-codex", name: "GPT-5.4-Codex", options: [efforts]),
             ProviderModel(slug: "gpt-5.4-mini", name: "GPT-5.4-Mini", options: [efforts]),
+        ]
+    }()
+
+    /// A slice of Claude Code's catalog as `initialize` reports it, with reasoning efforts and Fast Mode.
+    static let claudeModels: [ProviderModel] = {
+        let efforts = ProviderCatalog.effortOption(["low", "medium", "high", "xhigh", "max"], default: "high")
+        let fast = ModelOption(id: ModelOptionID.fastMode, label: "Fast Mode", kind: .boolean, defaultValue: "false")
+        return [
+            ProviderModel(slug: ModelSelection.configuredDefaultModel, name: "Fable 5.2 · default", isDefault: true, options: [efforts, fast]),
+            ProviderModel(slug: "opus", name: "Opus 5.5", options: [efforts, fast]),
+            ProviderModel(slug: "fable", name: "Fable 5.2", options: [efforts, fast]),
+            ProviderModel(slug: "sonnet", name: "Sonnet 5.5", options: [efforts, fast]),
+            ProviderModel(slug: "haiku", name: "Haiku 5.5", options: [efforts, fast]),
         ]
     }()
 

@@ -40,9 +40,10 @@ struct AppSettings: Equatable, Sendable {
     /// nil = the provider's own configured model (`ModelSelection.configuredDefaultModel`).
     var defaultModel: String?
     var defaultRuntimeMode: RuntimeMode = .fullAccess
-    /// Executable overrides; nil = find `omp` / `codex` / `agy` / `opencode` on PATH.
+    /// Executable overrides; nil = find `omp` / `codex` / `claude` / `agy` / `opencode` on PATH.
     var ompPath: String?
     var codexPath: String?
+    var claudePath: String?
     var opencodePath: String?
     var antigravityPath: String?
 
@@ -100,6 +101,7 @@ struct AppSettings: Equatable, Sendable {
             generateTitles: generateTitles,
             ompPath: ompPath,
             codexPath: codexPath,
+            claudePath: claudePath,
             opencodePath: opencodePath,
             antigravityPath: antigravityPath
         )

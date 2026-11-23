@@ -20,6 +20,7 @@ final class ExecutablePaths: @unchecked Sendable {
     private let lock = NSLock()
     private var ompPath: String?
     private var codexPath: String?
+    private var claudePath: String?
     private var opencodePath: String?
     private var antigravityPath: String?
 
@@ -27,6 +28,7 @@ final class ExecutablePaths: @unchecked Sendable {
         lock.withLock {
             ompPath = settings.ompPath
             codexPath = settings.codexPath
+            claudePath = settings.claudePath
             opencodePath = settings.opencodePath
             antigravityPath = settings.antigravityPath
         }
@@ -40,6 +42,11 @@ final class ExecutablePaths: @unchecked Sendable {
     /// `providers.codexPath`, or nil to search PATH.
     var codex: String? {
         lock.withLock { codexPath }
+    }
+
+    /// `providers.claudePath`, or nil to search PATH.
+    var claude: String? {
+        lock.withLock { claudePath }
     }
 
     /// `providers.opencodePath`, or nil to search PATH.
@@ -89,6 +96,7 @@ enum EngineFactory {
                     executablePath: { paths.codex },
                     launchAdjustments: { AccountLaunchBridge.codexAdjustments() }
                 ),
+                .claude: ClaudeDriver(executablePath: { paths.claude }),
                 .antigravity: AntigravityDriver(
                     executablePath: { paths.antigravity },
                     profile: AntigravityProtocol.profileDirectory(dataDirectory: dataDirectory)

@@ -107,11 +107,12 @@ enum SettingsResolver {
         }
 
         if let providers = section("providers", in: root, warn: warn) {
-            for key in providers.keys.sorted() where !["ompPath", "codexPath", "opencodePath", "antigravityPath"].contains(key) {
+            for key in providers.keys.sorted() where !["ompPath", "codexPath", "claudePath", "opencodePath", "antigravityPath"].contains(key) {
                 warn("Unknown setting \"providers.\(key)\".")
             }
             result.settings.ompPath = optionalPath(providers["ompPath"], key: "providers.ompPath", warn: warn) ?? result.settings.ompPath
             result.settings.codexPath = optionalPath(providers["codexPath"], key: "providers.codexPath", warn: warn) ?? result.settings.codexPath
+            result.settings.claudePath = optionalPath(providers["claudePath"], key: "providers.claudePath", warn: warn) ?? result.settings.claudePath
             result.settings.opencodePath = optionalPath(providers["opencodePath"], key: "providers.opencodePath", warn: warn) ?? result.settings.opencodePath
             result.settings.antigravityPath = optionalPath(providers["antigravityPath"], key: "providers.antigravityPath", warn: warn) ?? result.settings.antigravityPath
         }

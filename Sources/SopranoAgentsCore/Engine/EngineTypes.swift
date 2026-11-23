@@ -131,10 +131,11 @@ public struct EngineSettings: Sendable, Hashable {
     public var worktreesDirectory: String
     /// Generate thread titles with `textGenerationModel` after the first message.
     public var generateTitles: Bool
-    /// Executable overrides; nil = find `omp` / `codex` / `agy` / `opencode` on PATH (`agy` also
-    /// in omp's downloads).
+    /// Executable overrides; nil = find `omp` / `codex` / `claude` / `agy` / `opencode` on PATH
+    /// (`agy` also in omp's downloads).
     public var ompPath: String?
     public var codexPath: String?
+    public var claudePath: String?
     public var opencodePath: String?
     public var antigravityPath: String?
 
@@ -147,6 +148,7 @@ public struct EngineSettings: Sendable, Hashable {
         generateTitles: Bool = true,
         ompPath: String? = nil,
         codexPath: String? = nil,
+        claudePath: String? = nil,
         opencodePath: String? = nil,
         antigravityPath: String? = nil
     ) {
@@ -158,6 +160,7 @@ public struct EngineSettings: Sendable, Hashable {
         self.generateTitles = generateTitles
         self.ompPath = ompPath
         self.codexPath = codexPath
+        self.claudePath = claudePath
         self.opencodePath = opencodePath
         self.antigravityPath = antigravityPath
     }

@@ -26,6 +26,12 @@ All notable changes to Soprano Agents are documented here. The format follows
   titles, branch names and commit messages; `providers.opencodePath` if `opencode` is not on
   `PATH`. Settings → Providers shows each agent's status. Statistics, Accounts and word
   completion stay omp's.
+- Claude Code threads via `claude --print --output-format stream-json --input-format stream-json`:
+  the model picker (⇧⌘M) gets a Claude Code column with its live model catalog, reasoning efforts
+  and Fast Mode; inline tool approvals (`can_use_tool`) and `AskUserQuestion` dialogs, Plan mode
+  toggle (`⇧⌘T`), native subagents in the sidebar (`--forward-subagent-text`), `/` commands and
+  skills, `/compact`, MCP server injection (`--mcp-config`), and Claude Code text generation
+  (`textGeneration.provider`: `claude`). Set `providers.claudePath` if `claude` is not on `PATH`.
 - Codex threads via `codex app-server --stdio`: the model picker (⇧⌘M) gets a Codex column with
   Codex's live model catalog, reasoning efforts and Fast Mode; inline command and file-change
   approvals, structured user-input questions, steering, `/compact`, Edit from here rollback, Codex

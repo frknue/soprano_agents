@@ -256,9 +256,9 @@ Engine behavior:
 models), declares `ProviderCapabilities` (steering, rollback, Plan mode, native subagents, side
 questions, MCP injection, system-prompt append, host tools), runs one-shot `generateJSON`, and
 lists commands without a conversation (`commands(directory:)`). `OmpDriver`, `CodexDriver`,
-`AntigravityDriver` and `OpencodeDriver` implement it, one per `ProviderKind` (`.omp`, `.codex`,
-`.antigravity`, `.opencode`; declaration order is display order); the seam keeps the engine
-testable against a fake driver. `SessionConfig.mcpServers` carries OS-agnostic `MCPServerSpec`
+`ClaudeDriver`, `AntigravityDriver` and `OpencodeDriver` implement it, one per `ProviderKind`
+(`.omp`, `.codex`, `.claude`, `.antigravity`, `.opencode`; declaration order is display order); the
+seam keeps the engine testable against a fake driver. `SessionConfig.mcpServers` carries OS-agnostic `MCPServerSpec`
 definitions for session-level injection, and `TurnInput.interactionMode` (`.standard` / `.plan`)
 drives Plan mode for providers that support it.
 
@@ -285,6 +285,27 @@ changes. Events (`CodexEventMapper`): `item/agentMessage/delta`, `item/plan/delt
 `codex --version` plus a throwaway app-server for `account/read` and paginated `model/list`.
 `generateJSON` runs an ephemeral read-only thread with `outputSchema`. Traces:
 `Fixtures/codex-tool-turn.jsonl`.
+
+**Claude Code** — Anthropic's Claude Code CLI (`claude --print --verbose --output-format
+stream-json --input-format stream-json --include-partial-messages --permission-prompt-tool stdio
+--forward-subagent-text --allow-dangerously-skip-permissions`), one process per thread over
+`LineProcess` (path from `EngineSettings.claudePath` or PATH). Handshake: `control_request`
+`initialize` → receives version, account plan, model catalog (with `supportedEffortLevels` and
+`supportsFastMode`) and `/` commands/skills; `session_id` arrives on `system/init`. `SessionConfig.mcpServers`
+are written to a per-session temp `--mcp-config` file and removed on close; `systemPromptFile` uses
+`--append-system-prompt-file`. Before each turn, model and permission/Plan mode changes apply in
+place (`set_model`, `set_permission_mode`: `plan`, `default`, `acceptEdits`, `auto`,
+`bypassPermissions`). Turns send a `user` frame (text + base64 images up to 10 MB); steering sends
+an additional `user` frame; Stop sends `control_request` `interrupt` (5 s fallback grace); `/compact`
+runs Claude's native compaction. Approvals and `AskUserQuestion` arrive as `control_request`
+`can_use_tool` and are answered via `control_response`. Events (`ClaudeEventMapper`): `stream_event`
+text/thinking deltas, `assistant` tool uses (`Bash`, `Edit`/`MultiEdit`/`Write` diffs via `LineDiff`,
+`Read`, `Grep`/`Glob`, `WebSearch`, `Task`/`Agent` subagents routed by `parent_tool_use_id`,
+`TodoWrite`, MCP tools), `user` `tool_result`s, `system/compact_boundary` and `commands_changed`,
+and `result` usage (`modelUsage.*.contextWindow`) + completion. Probe: `claude --version`,
+`claude auth status`, and a short-lived `initialize` handshake. `generateJSON` runs `claude --print
+--output-format json --json-schema … --no-session-persistence --tools "" --effort low`. Traces:
+`Fixtures/claude-tool-turn.jsonl`.
 
 **omp** (oh-my-pi) — `omp --mode rpc-ui --cwd <cwd> --approval-mode <mode>
 [--model <provider/id>] [--thinking <level>] [--resume <session file>]`, one process per thread
