@@ -49,7 +49,7 @@ struct TimelineRowsTests {
 
     @Test func aFinishedTurnFoldsItsWorkAndKeepsTheAnswerWithItsChangedFiles() {
         let rows = TimelineBuilder.rows(for: thread([workedTurn]))
-        #expect(ids(rows) == ["user:m-t1", "fold:t1", "assistant:a2"])
+        #expect(ids(rows) == ["user:m-t1", "fold:t1", "assistant:t1:a2"])
         guard case let .fold(fold) = rows[1].content, case let .assistant(answer) = rows[2].content else {
             Issue.record("unexpected rows \(rows)")
             return
@@ -63,7 +63,7 @@ struct TimelineRowsTests {
 
     @Test func openingTheFoldShowsCommentaryBetweenSummarizedWorkGroups() {
         let rows = TimelineBuilder.rows(for: thread([workedTurn]), expansion: TimelineExpansion(turns: ["t1"]))
-        #expect(ids(rows) == ["user:m-t1", "fold:t1", "group:r1", "assistant:a1", "diff:f1:0", "assistant:a2"])
+        #expect(ids(rows) == ["user:m-t1", "fold:t1", "group:t1:r1", "assistant:t1:a1", "diff:t1:f1:0", "assistant:t1:a2"])
         guard case let .workGroup(group) = rows[2].content, case let .assistant(commentary) = rows[3].content else {
             Issue.record("unexpected rows \(rows)")
             return
@@ -71,21 +71,21 @@ struct TimelineRowsTests {
         #expect(group.summary == "Ran 1 command and read 1 file")
         #expect(!commentary.showMeta)
 
-        let open = TimelineBuilder.rows(for: thread([workedTurn]), expansion: TimelineExpansion(turns: ["t1"], groups: ["group:r1"]))
-        #expect(ids(open) == ["user:m-t1", "fold:t1", "group:r1", "entry:r1", "entry:c1", "entry:t1", "assistant:a1", "diff:f1:0", "assistant:a2"])
+        let open = TimelineBuilder.rows(for: thread([workedTurn]), expansion: TimelineExpansion(turns: ["t1"], groups: ["group:t1:r1"]))
+        #expect(ids(open) == ["user:m-t1", "fold:t1", "group:t1:r1", "entry:t1:r1", "entry:t1:c1", "entry:t1:t1", "assistant:t1:a1", "diff:t1:f1:0", "assistant:t1:a2"])
     }
 
     @Test func adjacentWorkLogRowsSitFlushAndBlocksKeepTheirSpacing() {
-        let rows = TimelineBuilder.rows(for: thread([workedTurn]), expansion: TimelineExpansion(turns: ["t1"], groups: ["group:r1"]))
+        let rows = TimelineBuilder.rows(for: thread([workedTurn]), expansion: TimelineExpansion(turns: ["t1"], groups: ["group:t1:r1"]))
         let spacing = Dictionary(uniqueKeysWithValues: rows.map { ($0.id, $0.bottomSpacing) })
         #expect(spacing["user:m-t1"] == 16)
         #expect(spacing["fold:t1"] == 6)
-        #expect(spacing["group:r1"] == 0)
-        #expect(spacing["entry:r1"] == 0)
-        #expect(spacing["entry:t1"] == 4)
-        #expect(spacing["assistant:a1"] == 8)
-        #expect(spacing["diff:f1:0"] == 8)
-        #expect(spacing["assistant:a2"] == 16)
+        #expect(spacing["group:t1:r1"] == 0)
+        #expect(spacing["entry:t1:r1"] == 0)
+        #expect(spacing["entry:t1:t1"] == 4)
+        #expect(spacing["assistant:t1:a1"] == 8)
+        #expect(spacing["diff:t1:f1:0"] == 8)
+        #expect(spacing["assistant:t1:a2"] == 16)
     }
 
     @Test func anInterruptedTurnSaysTheUserStoppedIt() {
@@ -103,7 +103,7 @@ struct TimelineRowsTests {
     @Test func aFailedTurnStaysOpenAndEndsWithItsFailure() {
         let failed = turn(status: .failed, items: [item("c1", .command(CommandExecution(command: "make", exitCode: 2)), status: .failed)], failure: "Codex exited.")
         let rows = TimelineBuilder.rows(for: thread([failed]))
-        #expect(ids(rows) == ["user:m-t1", "entry:c1", "failure:t1"])
+        #expect(ids(rows) == ["user:m-t1", "entry:t1:c1", "failure:t1"])
         #expect(rows[2].content == .error(message: "Codex exited.", date: at(192)))
     }
 
@@ -130,7 +130,7 @@ struct TimelineRowsTests {
     @Test func aRunningTurnWithoutToolsEndsWithThinking() {
         let running = turn(status: .running, items: [item("a1", .assistantMessage(text: "On it.", isFinal: false), status: .running)])
         let rows = TimelineBuilder.rows(for: thread([running]))
-        #expect(ids(rows) == ["user:m-t1", "working:t1", "assistant:a1", "thinking:t1"])
+        #expect(ids(rows) == ["user:m-t1", "working:t1", "assistant:t1:a1", "thinking:t1"])
         guard case let .assistant(message) = rows[2].content else { return }
         #expect(message.isStreaming)
         #expect(!message.showMeta)
@@ -138,7 +138,7 @@ struct TimelineRowsTests {
 
     @Test func nobodyIsThinkingAfterTheAnswerUntilTheAgentWorksAgain() {
         let answered = turn(status: .running, items: [item("a1", .assistantMessage(text: "Done.", isFinal: true))])
-        #expect(ids(TimelineBuilder.rows(for: thread([answered]))) == ["user:m-t1", "working:t1", "assistant:a1"])
+        #expect(ids(TimelineBuilder.rows(for: thread([answered]))) == ["user:m-t1", "working:t1", "assistant:t1:a1"])
 
         let secondPass = turn(status: .running, items: [
             item("a1", .assistantMessage(text: "Done.", isFinal: true)),
@@ -152,7 +152,7 @@ struct TimelineRowsTests {
         stopping.stopRequestedAt = at(5)
         let rows = TimelineBuilder.rows(for: thread([stopping]))
 
-        #expect(ids(rows) == ["user:m-t1", "working:t1", "assistant:a1"])
+        #expect(ids(rows) == ["user:m-t1", "working:t1", "assistant:t1:a1"])
         #expect(rows[1].content == .working(startedAt: start, stopping: true))
     }
 
@@ -162,20 +162,20 @@ struct TimelineRowsTests {
             item("p1", .approval(ApprovalRequest(id: "req", kind: .command, detail: "swift test")), status: .pending),
         ])
         let rows = TimelineBuilder.rows(for: thread([waiting]))
-        #expect(ids(rows) == ["user:m-t1", "working:t1", "entry:c1", "approval:p1"])
+        #expect(ids(rows) == ["user:m-t1", "working:t1", "entry:t1:c1", "approval:t1:p1"])
     }
 
     @Test func pendingQuestionsStandAloneAndAnsweredOnesSurviveTheFold() {
         let question = UserInputQuestion(id: "q", header: "Fix", question: "How?", options: [])
         let pending = turn(status: .running, items: [item("q1", .userInput(UserInputRequest(id: "in", questions: [question])), status: .pending)])
-        #expect(ids(TimelineBuilder.rows(for: thread([pending]))) == ["user:m-t1", "working:t1", "entry:q1"])
+        #expect(ids(TimelineBuilder.rows(for: thread([pending]))) == ["user:m-t1", "working:t1", "entry:t1:q1"])
 
         let answered = turn(items: [
             item("c1", .command(CommandExecution(command: "ls"))),
             item("q1", .userInput(UserInputRequest(id: "in", questions: [question], answers: ["q": ["Await"]]))),
         ])
         let rows = TimelineBuilder.rows(for: thread([answered]))
-        #expect(ids(rows) == ["user:m-t1", "fold:t1", "entry:q1"])
+        #expect(ids(rows) == ["user:m-t1", "fold:t1", "entry:t1:q1"])
         guard case let .workEntry(entry) = rows[2].content else { return }
         #expect(entry.entry.label == "Answered questions")
         #expect(entry.entry.note == "Await")
@@ -186,7 +186,7 @@ struct TimelineRowsTests {
             item("c1", .command(CommandExecution(command: "ls"))),
             item("n1", .notice(text: "Context compacted")),
         ])
-        #expect(ids(TimelineBuilder.rows(for: thread([noted]))) == ["user:m-t1", "fold:t1", "notice:n1"])
+        #expect(ids(TimelineBuilder.rows(for: thread([noted]))) == ["user:m-t1", "fold:t1", "notice:t1:n1"])
     }
 
     @Test func anUnansweredReviewClosesUnderTheAnswerWithItsNoteAndOpensOneRowPerNote() {
@@ -197,18 +197,18 @@ struct TimelineRowsTests {
             item("v1", .advisory(notes)),
         ])
         let rows = TimelineBuilder.rows(for: thread([reviewed]))
-        #expect(ids(rows) == ["user:m-t1", "fold:t1", "assistant:a1", "checks:t1"])
+        #expect(ids(rows) == ["user:m-t1", "fold:t1", "assistant:t1:a1", "checks:t1"])
         #expect(rows[3].content == .checks(ChecksRowModel(turnID: "t1", passes: [
             CheckPassModel(sources: ["Final reviewer", "Advisor"], severity: .concern, outcome: nil, note: "Run the tests. Then say so."),
         ], expanded: false)))
 
         let open = TimelineBuilder.rows(for: thread([reviewed]), expansion: TimelineExpansion(checks: ["t1"]))
-        #expect(ids(open) == ["user:m-t1", "fold:t1", "assistant:a1", "checks:t1", "advisory:v1:0", "advisory:v1:1"])
+        #expect(ids(open) == ["user:m-t1", "fold:t1", "assistant:t1:a1", "checks:t1", "advisory:t1:v1:0", "advisory:t1:v1:1"])
         #expect(open[4].content == .advisory(AdvisoryRowModel(note: notes[0], date: at(1))))
 
         var running = reviewed
         running.status = .running
-        #expect(ids(TimelineBuilder.rows(for: thread([running]))).suffix(2) == ["advisory:v1:0", "advisory:v1:1"])
+        #expect(ids(TimelineBuilder.rows(for: thread([running]))).suffix(2) == ["advisory:t1:v1:0", "advisory:t1:v1:1"])
     }
 
     @Test func checksAfterTheRecapCloseUnderItWithEachReplysOpeningProseAndKeepErrorsOut() {
@@ -230,7 +230,7 @@ struct TimelineRowsTests {
         ], files: [ChangedFileStat(path: "A.swift", additions: 1, deletions: 0)])
 
         let rows = TimelineBuilder.rows(for: thread([rechecked]))
-        #expect(ids(rows) == ["user:m-t1", "fold:t1", "assistant:a1", "checks:t1", "error:e1"])
+        #expect(ids(rows) == ["user:m-t1", "fold:t1", "assistant:t1:a1", "checks:t1", "error:t1:e1"])
         guard case let .assistant(recap) = rows[2].content else {
             Issue.record("unexpected rows \(rows)")
             return
@@ -243,15 +243,15 @@ struct TimelineRowsTests {
         ], expanded: false)))
 
         let checks = TimelineBuilder.rows(for: thread([rechecked]), expansion: TimelineExpansion(checks: ["t1"]))
-        #expect(ids(checks) == ["user:m-t1", "fold:t1", "assistant:a1", "checks:t1", "advisory:v1:0", "notice:n1", "error:e1", "assistant:a3", "advisory:v2:0", "assistant:a4"])
+        #expect(ids(checks) == ["user:m-t1", "fold:t1", "assistant:t1:a1", "checks:t1", "advisory:t1:v1:0", "notice:t1:n1", "error:t1:e1", "assistant:t1:a3", "advisory:t1:v2:0", "assistant:t1:a4"])
         guard case let .assistant(last) = checks[9].content else { return }
         #expect(last.showMeta)
         #expect(last.changedFiles == nil)
 
         let all = TimelineBuilder.rows(for: thread([rechecked]), expansion: TimelineExpansion(turns: ["t1"], checks: ["t1"]))
         #expect(ids(all) == [
-            "user:m-t1", "fold:t1", "entry:c1", "assistant:a1", "checks:t1", "advisory:v1:0", "notice:n1",
-            "assistant:a2", "entry:c2", "error:e1", "assistant:a3", "advisory:v2:0", "entry:c3", "assistant:a4",
+            "user:m-t1", "fold:t1", "entry:t1:c1", "assistant:t1:a1", "checks:t1", "advisory:t1:v1:0", "notice:t1:n1",
+            "assistant:t1:a2", "entry:t1:c2", "error:t1:e1", "assistant:t1:a3", "advisory:t1:v2:0", "entry:t1:c3", "assistant:t1:a4",
         ])
     }
 
@@ -271,7 +271,7 @@ struct TimelineRowsTests {
         ], files: [ChangedFileStat(path: "A.swift", additions: 1, deletions: 0)])
 
         let rows = TimelineBuilder.rows(for: thread([recapped]))
-        #expect(ids(rows) == ["user:m-t1", "fold:t1", "assistant:a1", "checks:t1", "assistant:a5"])
+        #expect(ids(rows) == ["user:m-t1", "fold:t1", "assistant:t1:a1", "checks:t1", "assistant:t1:a5"])
         guard case let .assistant(answer) = rows[2].content, case let .assistant(recap) = rows[4].content else {
             Issue.record("unexpected rows \(rows)")
             return
@@ -287,8 +287,8 @@ struct TimelineRowsTests {
 
         let open = TimelineBuilder.rows(for: thread([recapped]), expansion: TimelineExpansion(checks: ["t1"]))
         #expect(ids(open) == [
-            "user:m-t1", "fold:t1", "assistant:a1", "checks:t1", "notice:n1", "assistant:a2", "notice:n2",
-            "assistant:a3", "advisory:v1:0", "assistant:a4", "notice:n3", "assistant:a5",
+            "user:m-t1", "fold:t1", "assistant:t1:a1", "checks:t1", "notice:t1:n1", "assistant:t1:a2", "notice:t1:n2",
+            "assistant:t1:a3", "advisory:t1:v1:0", "assistant:t1:a4", "notice:t1:n3", "assistant:t1:a5",
         ])
     }
 
@@ -303,7 +303,7 @@ struct TimelineRowsTests {
             item("v1", .advisory([AdvisorNote(text: "Nit.", severity: .nit, advisor: "Final reviewer")])),
         ], files: [ChangedFileStat(path: "A.swift", additions: 1, deletions: 0)])
         let rows = TimelineBuilder.rows(for: thread([unanswered]))
-        #expect(ids(rows) == ["user:m-t1", "assistant:a1", "checks:t1", "assistant:a3"])
+        #expect(ids(rows) == ["user:m-t1", "assistant:t1:a1", "checks:t1", "assistant:t1:a3"])
         guard case let .checks(model) = rows[2].content else {
             Issue.record("expected a checks row")
             return
@@ -322,7 +322,7 @@ struct TimelineRowsTests {
             item("a4", .assistantMessage(text: "Pushed to origin/main.", isFinal: true)),
         ], files: [ChangedFileStat(path: "A.swift", additions: 1, deletions: 0)])
         let replyRows = TimelineBuilder.rows(for: thread([replied]))
-        #expect(ids(replyRows) == ["user:m-t1", "fold:t1", "assistant:a1", "checks:t1", "assistant:a3", "assistant:a4"])
+        #expect(ids(replyRows) == ["user:m-t1", "fold:t1", "assistant:t1:a1", "checks:t1", "assistant:t1:a3", "assistant:t1:a4"])
         guard case let .assistant(recap) = replyRows[4].content, case let .assistant(last) = replyRows[5].content,
               case let .checks(checks) = replyRows[3].content else {
             Issue.record("unexpected rows \(replyRows)")
@@ -345,7 +345,7 @@ struct TimelineRowsTests {
             item("n2", .notice(text: "auto-recap: final recap before finishing")),
             item("a4", .assistantMessage(text: "Recap 2.", isFinal: true)),
         ])
-        #expect(ids(TimelineBuilder.rows(for: thread([early]))) == ["user:m-t1", "assistant:a1", "checks:t1", "assistant:a4"])
+        #expect(ids(TimelineBuilder.rows(for: thread([early]))) == ["user:m-t1", "assistant:t1:a1", "checks:t1", "assistant:t1:a4"])
 
         // A review between the recap notice and the recap is not answered by the recap.
         let interleaved = turn(items: [
@@ -357,7 +357,7 @@ struct TimelineRowsTests {
             item("a3", .assistantMessage(text: "Recap.", isFinal: true)),
         ])
         let rows = TimelineBuilder.rows(for: thread([interleaved]))
-        #expect(ids(rows) == ["user:m-t1", "assistant:a1", "checks:t1", "assistant:a3"])
+        #expect(ids(rows) == ["user:m-t1", "assistant:t1:a1", "checks:t1", "assistant:t1:a3"])
         if case let .checks(model) = rows[2].content {
             #expect(model.passes.map(\.outcome) == ["No defects.", nil])
         } else {
@@ -376,7 +376,7 @@ struct TimelineRowsTests {
             item("n3", .notice(text: "auto-recap: final recap before finishing")),
         ], files: [ChangedFileStat(path: "A.swift", additions: 1, deletions: 0)])
         let unansweredRows = TimelineBuilder.rows(for: thread([unanswered]))
-        #expect(ids(unansweredRows) == ["user:m-t1", "assistant:a1", "checks:t1", "assistant:a3", "assistant:a4"])
+        #expect(ids(unansweredRows) == ["user:m-t1", "assistant:t1:a1", "checks:t1", "assistant:t1:a3", "assistant:t1:a4"])
         if case let .assistant(recap) = unansweredRows[3].content {
             #expect(recap.changedFiles?.files.map(\.path) == ["A.swift"])
         }
@@ -387,14 +387,14 @@ struct TimelineRowsTests {
             item("a1", .assistantMessage(text: "Done.", isFinal: true), at: 1),
             item("n1", .notice(text: "Context compacted"), at: 3),
         ])
-        #expect(ids(TimelineBuilder.rows(for: thread([compacted]))) == ["user:m-t1", "assistant:a1", "notice:n1"])
+        #expect(ids(TimelineBuilder.rows(for: thread([compacted]))) == ["user:m-t1", "assistant:t1:a1", "notice:t1:n1"])
 
         let steered = turn(items: [
             item("a1", .assistantMessage(text: "Done.", isFinal: true), at: 1),
             item("n1", .notice(text: "auto-double-check: second pass before finishing"), at: 4),
             item("a2", .assistantMessage(text: "Docs too.", isFinal: true), at: 5),
         ], steers: [UserMessage(id: "steer", text: "Also docs", createdAt: at(3), isSteer: true)])
-        #expect(ids(TimelineBuilder.rows(for: thread([steered]))) == ["user:m-t1", "assistant:a1", "user:steer", "notice:n1", "assistant:a2"])
+        #expect(ids(TimelineBuilder.rows(for: thread([steered]))) == ["user:m-t1", "assistant:t1:a1", "user:steer", "notice:t1:n1", "assistant:t1:a2"])
 
         // Compaction and retry notices neither start a check nor name one.
         let noisy = turn(items: [
@@ -420,7 +420,7 @@ struct TimelineRowsTests {
             item("c1", .command(CommandExecution(command: "swift test")), status: .interrupted),
         ]
         let stopped = turn(status: .interrupted, items: checkedItems)
-        #expect(ids(TimelineBuilder.rows(for: thread([stopped]))) == ["user:m-t1", "fold:t1", "assistant:a1", "notice:n1", "assistant:a2"])
+        #expect(ids(TimelineBuilder.rows(for: thread([stopped]))) == ["user:m-t1", "fold:t1", "assistant:t1:a1", "notice:t1:n1", "assistant:t1:a2"])
 
         // A background job's report after a review is no reply to it.
         var woken = turn(items: [
@@ -430,7 +430,7 @@ struct TimelineRowsTests {
             item("a2", .assistantMessage(text: "The suite finished: 3 tests fail.", isFinal: true)),
         ])
         woken.wokenAt = at(5)
-        #expect(ids(TimelineBuilder.rows(for: thread([woken]))) == ["user:m-t1", "fold:t1", "assistant:a1", "advisory:v1:0", "assistant:a2"])
+        #expect(ids(TimelineBuilder.rows(for: thread([woken]))) == ["user:m-t1", "fold:t1", "assistant:t1:a1", "advisory:t1:v1:0", "assistant:t1:a2"])
 
         let failedPush = turn(items: [
             item("a1", .assistantMessage(text: "Recap.", isFinal: true)),
@@ -438,7 +438,7 @@ struct TimelineRowsTests {
             item("a2", .assistantMessage(text: "Pushing the fix.", isFinal: true)),
             item("c1", .command(CommandExecution(command: "git push", exitCode: 1)), status: .failed),
         ])
-        #expect(ids(TimelineBuilder.rows(for: thread([failedPush]))) == ["user:m-t1", "assistant:a1", "checks:t1", "entry:c1"])
+        #expect(ids(TimelineBuilder.rows(for: thread([failedPush]))) == ["user:m-t1", "assistant:t1:a1", "checks:t1", "entry:t1:c1"])
     }
 
     @Test func theWorkedForFoldStaysWhenOnlyTheClosedChecksHideWork() {
@@ -448,9 +448,9 @@ struct TimelineRowsTests {
             item("c1", .command(CommandExecution(command: "swift test"))),
             item("a2", .assistantMessage(text: "Checked.", isFinal: true)),
         ])
-        #expect(ids(TimelineBuilder.rows(for: thread([checked]))) == ["user:m-t1", "fold:t1", "assistant:a1", "checks:t1"])
+        #expect(ids(TimelineBuilder.rows(for: thread([checked]))) == ["user:m-t1", "fold:t1", "assistant:t1:a1", "checks:t1"])
         let open = TimelineBuilder.rows(for: thread([checked]), expansion: TimelineExpansion(checks: ["t1"]))
-        #expect(ids(open) == ["user:m-t1", "fold:t1", "assistant:a1", "checks:t1", "advisory:v1:0", "assistant:a2"])
+        #expect(ids(open) == ["user:m-t1", "fold:t1", "assistant:t1:a1", "checks:t1", "advisory:t1:v1:0", "assistant:t1:a2"])
     }
 
     @Test func aChecksReplyReadsAsItsProseUpToAboutFourLines() {
@@ -492,17 +492,17 @@ struct TimelineRowsTests {
             item("c1", .command(CommandExecution(command: "sleep 8")), at: 1),
             item("a1", .assistantMessage(text: "Started.", isFinal: true), at: 2),
         ])
-        #expect(ids(TimelineBuilder.rows(for: thread([resumed]))).last == "assistant:a1")
+        #expect(ids(TimelineBuilder.rows(for: thread([resumed]))).last == "assistant:t1:a1")
         resumed.resumedAt = at(10)
         #expect(ids(TimelineBuilder.rows(for: thread([resumed]))).last == "thinking:t1")
 
         resumed.items.append(item("a2", .assistantMessage(text: "The job finished.", isFinal: true), at: 12))
-        #expect(ids(TimelineBuilder.rows(for: thread([resumed]))).last == "assistant:a2")
+        #expect(ids(TimelineBuilder.rows(for: thread([resumed]))).last == "assistant:t1:a2")
 
         resumed.status = .completed
         resumed.completedAt = at(20)
         resumed.resumedAt = nil
-        #expect(ids(TimelineBuilder.rows(for: thread([resumed]))) == ["user:m-t1", "fold:t1", "assistant:a1", "assistant:a2"])
+        #expect(ids(TimelineBuilder.rows(for: thread([resumed]))) == ["user:m-t1", "fold:t1", "assistant:t1:a1", "assistant:t1:a2"])
     }
 
     @Test func changedFilesWithoutAnAnswerGetTheirOwnCard() {
@@ -517,7 +517,7 @@ struct TimelineRowsTests {
             item("c2", .command(CommandExecution(command: "make")), status: .running, at: 3),
         ], steers: [steer])
         let rows = TimelineBuilder.rows(for: thread([steered]))
-        #expect(ids(rows) == ["user:m-t1", "working:t1", "entry:c1", "user:steer", "live:t1"])
+        #expect(ids(rows) == ["user:m-t1", "working:t1", "entry:t1:c1", "user:steer", "live:t1"])
         guard case let .user(model) = rows[3].content else { return }
         #expect(model.turnID == nil)
     }
@@ -546,7 +546,7 @@ struct TimelineRowsTests {
         yielded.yieldedAt = at(60)
         let rows = TimelineBuilder.rows(for: thread([yielded]))
 
-        #expect(ids(rows) == ["user:m-t1", "fold:t1", "assistant:a2", "background:t1"])
+        #expect(ids(rows) == ["user:m-t1", "fold:t1", "assistant:t1:a2", "background:t1"])
         guard case let .fold(fold) = rows[1].content, case let .user(user) = rows[0].content else { return }
         #expect(fold.label == "Worked for 1m")
         #expect(user.canEdit)
@@ -571,7 +571,7 @@ struct TimelineRowsTests {
 
     @Test func theDetailedLogListsARunningTurnsStepsWithTheEditBeingWrittenOpen() {
         let rows = TimelineBuilder.rows(for: thread([editingTurn]), expansion: detailed)
-        #expect(ids(rows) == ["user:m-t1", "working:t1", "group:s1", "entry:s1", "diff:f1:0", "diff:f2:0"])
+        #expect(ids(rows) == ["user:m-t1", "working:t1", "group:t1:s1", "entry:t1:s1", "diff:t1:f1:0", "diff:t1:f2:0"])
         guard case let .fileDiff(done) = rows[4].content, case let .fileDiff(live) = rows[5].content else {
             Issue.record("expected diff rows, got \(rows)")
             return
@@ -602,12 +602,12 @@ struct TimelineRowsTests {
             item("c1", .command(CommandExecution(command: "swift test", output: "Building…\n")), status: .running, at: 2),
         ])
         let closed = TimelineBuilder.rows(for: thread([running]), expansion: detailed)
-        #expect(ids(closed) == ["user:m-t1", "working:t1", "group:s1", "entry:s1", "entry:c1"])
+        #expect(ids(closed) == ["user:m-t1", "working:t1", "group:t1:s1", "entry:t1:s1", "entry:t1:c1"])
         guard case let .workEntry(command) = closed[4].content else { return }
         #expect(command.entry.isActive && command.entry.canExpand && !command.expanded)
 
         var expansion = detailed
-        expansion.entries.insert("c1")
+        expansion.entries.insert("t1:c1")
         let open = TimelineBuilder.rows(for: thread([running]), expansion: expansion)
         guard case let .workEntry(opened) = open[4].content else { return }
         #expect(opened.expanded)
@@ -623,14 +623,14 @@ struct TimelineRowsTests {
         ])
         // Nothing runs, so nothing in the steps shimmers: the Thinking row shows the turn is alive.
         #expect(ids(TimelineBuilder.rows(for: thread([between]), expansion: detailed))
-            == ["user:m-t1", "working:t1", "group:s1", "entry:s1", "entry:s2", "thinking:t1"])
+            == ["user:m-t1", "working:t1", "group:t1:s1", "entry:t1:s1", "entry:t1:s2", "thinking:t1"])
         // The minimal live row shimmers with the last step instead.
         #expect(ids(TimelineBuilder.rows(for: thread([between]))) == ["user:m-t1", "working:t1", "live:t1"])
     }
 
     @Test func collapsingTheRunningGroupInTheDetailedLogGivesTheLiveRow() {
         var expansion = detailed
-        expansion.set("group:s1", open: false, in: \.groups)
+        expansion.set("group:t1:s1", open: false, in: \.groups)
         let rows = TimelineBuilder.rows(for: thread([editingTurn]), expansion: expansion)
         #expect(ids(rows) == ["user:m-t1", "working:t1", "live:t1"])
     }
@@ -639,9 +639,9 @@ struct TimelineRowsTests {
         #expect(ids(TimelineBuilder.rows(for: thread([editingTurn]))) == ["user:m-t1", "working:t1", "live:t1"])
 
         var expansion = TimelineExpansion()
-        expansion.set("group:s1", open: true, in: \.groups)
+        expansion.set("group:t1:s1", open: true, in: \.groups)
         let rows = TimelineBuilder.rows(for: thread([editingTurn]), expansion: expansion)
-        #expect(ids(rows) == ["user:m-t1", "working:t1", "live:t1", "entry:s1", "diff:f1:0", "diff:f2:0"])
+        #expect(ids(rows) == ["user:m-t1", "working:t1", "live:t1", "entry:t1:s1", "diff:t1:f1:0", "diff:t1:f2:0"])
         guard case let .fileDiff(diff) = rows[4].content else { return }
         #expect(!diff.expanded)
     }
@@ -655,9 +655,9 @@ struct TimelineRowsTests {
             item("a1", .assistantMessage(text: "Done.", isFinal: true)),
         ])
         var expansion = detailed
-        expansion.set("f1:0", open: false, in: \.diffs)
+        expansion.set("t1:f1:0", open: false, in: \.diffs)
         let rows = TimelineBuilder.rows(for: thread([edited]), expansion: expansion)
-        #expect(ids(rows) == ["user:m-t1", "fold:t1", "diff:f1:0", "diff:f1:1", "assistant:a1"])
+        #expect(ids(rows) == ["user:m-t1", "fold:t1", "diff:t1:f1:0", "diff:t1:f1:1", "assistant:t1:a1"])
         guard case let .fold(fold) = rows[1].content, case let .fileDiff(closed) = rows[2].content,
               case let .fileDiff(deleted) = rows[3].content else { return }
         #expect(fold.expanded)
@@ -666,6 +666,34 @@ struct TimelineRowsTests {
         #expect(deleted.label == "Deleted C.swift")
 
         expansion.set("t1", open: false, in: \.turns)
-        #expect(ids(TimelineBuilder.rows(for: thread([edited]), expansion: expansion)) == ["user:m-t1", "fold:t1", "assistant:a1"])
+        #expect(ids(TimelineBuilder.rows(for: thread([edited]), expansion: expansion)) == ["user:m-t1", "fold:t1", "assistant:t1:a1"])
+    }
+
+    @Test func repeatedProviderItemIDsAcrossTurnsGetDistinctRowIDsAndIndependentExpansion() {
+        let first = turn("turn-1", items: [
+            item("t1/thought-1", .reasoning(text: "First thought.")),
+            item("t1/cmd-1", .command(CommandExecution(command: "echo 1"))),
+            item("t1/msg-1", .assistantMessage(text: "First answer.", isFinal: true)),
+        ])
+        let second = turn("turn-2", items: [
+            item("t1/thought-1", .reasoning(text: "Second thought.")),
+            item("t1/cmd-1", .command(CommandExecution(command: "echo 2"))),
+            item("t1/msg-1", .assistantMessage(text: "Second answer.", isFinal: true)),
+        ])
+        var expansion = detailed
+        expansion.entries.insert("turn-2:t1/thought-1")
+        let rows = TimelineBuilder.rows(for: thread([first, second]), expansion: expansion)
+        let rowIDs = ids(rows)
+        #expect(Set(rowIDs).count == rowIDs.count)
+
+        let entries = rows.compactMap { row -> WorkEntryRowModel? in
+            if case let .workEntry(model) = row.content, model.entry.kind == .reasoning { return model }
+            return nil
+        }
+        #expect(entries.count == 2)
+        #expect(entries[0].id == "turn-1:t1/thought-1")
+        #expect(!entries[0].expanded)
+        #expect(entries[1].id == "turn-2:t1/thought-1")
+        #expect(entries[1].expanded)
     }
 }

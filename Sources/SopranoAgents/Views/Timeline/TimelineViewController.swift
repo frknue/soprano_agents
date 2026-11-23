@@ -150,6 +150,10 @@ final class TimelineViewController: NSViewController, FocusRegionController, Tim
     }
 
     func reload(scrollToEnd: Bool = false) {
+        reload(scrollToEnd: scrollToEnd, anchorRow: nil)
+    }
+
+    private func reload(scrollToEnd: Bool, anchorRow: (before: String, resolveAfter: ([TimelineRow]) -> String?)?) {
         guard isViewLoaded else { return }
         let thread = selectedThread
         // Find searches the shown rows: while it has a query, every turn's checks are open so their
@@ -159,7 +163,14 @@ final class TimelineViewController: NSViewController, FocusRegionController, Tim
         let rows = TimelineBuilder.rows(for: thread, expansion: shown, editable: state.selectedSubagentID == nil)
         let threadChanged = thread?.id != shownThreadID
         shownThreadID = thread?.id
-        list.setRows(rows, scrollToEnd: scrollToEnd || threadChanged)
+        let resolvedAnchor: (before: String, after: String)? = if !scrollToEnd, !threadChanged,
+            let anchorRow, let after = anchorRow.resolveAfter(rows)
+        {
+            (before: anchorRow.before, after: after)
+        } else {
+            nil
+        }
+        list.setRows(rows, scrollToEnd: scrollToEnd || threadChanged, anchorRow: resolvedAnchor)
         if isFindOpen { refreshFind(keepIndex: true, reveal: false) }
         updateClock(running: thread?.isRunning ?? false)
     }
@@ -255,7 +266,7 @@ final class TimelineViewController: NSViewController, FocusRegionController, Tim
             switch row.content {
             case let .workGroup(model): expansion.set(model.groupID, open: false, in: \.groups)
             case let .liveWork(model): expansion.set(model.groupID, open: false, in: \.groups)
-            case let .workEntry(model): expansion.entries.remove(model.entry.id)
+            case let .workEntry(model): expansion.entries.remove(model.id)
             case let .fileDiff(model): expansion.set(model.id, open: false, in: \.diffs)
             default: break
             }
@@ -264,16 +275,38 @@ final class TimelineViewController: NSViewController, FocusRegionController, Tim
     }
 
     private func toggle(_ id: String, in keyPath: WritableKeyPath<TimelineExpansion, Set<String>>) {
+        let beforeRowID = rowID(for: id, in: keyPath, in: list.rows)
+        let wasVisible = beforeRowID.map { list.isRowVisible($0) } ?? false
         if expansion[keyPath: keyPath].contains(id) {
             expansion[keyPath: keyPath].remove(id)
         } else {
             expansion[keyPath: keyPath].insert(id)
         }
-        reload()
-        // A pinned timeline follows its end; keep an opened row's header in view instead.
-        if let rowID = openedRowID(id, in: keyPath) {
+        let anchor: (before: String, resolveAfter: ([TimelineRow]) -> String?)? = beforeRowID.map { before in
+            (before: before, resolveAfter: { [self] rows in rowID(for: id, in: keyPath, in: rows) })
+        }
+        reload(scrollToEnd: false, anchorRow: anchor)
+        // If the row was not already visible before toggling (e.g. a programmatic open), bring its
+        // opened header into view; an already-visible clicked row stays anchored under the cursor.
+        if !wasVisible, let rowID = openedRowID(id, in: keyPath) {
             list.reveal(rowID: rowID, rect: NSRect(x: 0, y: 0, width: 1, height: 24))
         }
+    }
+
+    /// The row for `id` in `rows`, regardless of whether it is expanded or collapsed.
+    private func rowID(for id: String, in keyPath: WritableKeyPath<TimelineExpansion, Set<String>>, in rows: [TimelineRow]) -> String? {
+        rows.first { row in
+            switch row.content {
+            case let .fold(model): keyPath == \.turns && model.turnID == id
+            case let .checks(model): keyPath == \.checks && model.turnID == id
+            case let .workGroup(model): keyPath == \.groups && model.groupID == id
+            case let .liveWork(model): keyPath == \.groups && model.groupID == id
+            case let .workEntry(model): keyPath == \.entries && model.id == id
+            case let .fileDiff(model): keyPath == \.diffs && model.id == id
+            case let .user(model): keyPath == \.messages && model.message.id == id
+            default: false
+            }
+        }?.id
     }
 
     /// The row that `id` opened, if toggling it opened one.
@@ -281,9 +314,10 @@ final class TimelineViewController: NSViewController, FocusRegionController, Tim
         list.rows.first { row in
             switch row.content {
             case let .fold(model): keyPath == \.turns && model.turnID == id && model.expanded
+            case let .checks(model): keyPath == \.checks && model.turnID == id && model.expanded
             case let .workGroup(model): keyPath == \.groups && model.groupID == id && model.expanded
             case let .liveWork(model): keyPath == \.groups && model.groupID == id && model.expanded
-            case let .workEntry(model): keyPath == \.entries && model.entry.id == id && model.expanded
+            case let .workEntry(model): keyPath == \.entries && model.id == id && model.expanded
             case let .fileDiff(model): keyPath == \.diffs && model.id == id && model.expanded
             case let .user(model): keyPath == \.messages && model.message.id == id && model.expanded
             default: false
@@ -297,10 +331,7 @@ final class TimelineViewController: NSViewController, FocusRegionController, Tim
     func timelineToggleChecks(turnID: String) {
         // While Find has a query every checks row is open (see `reload`).
         guard !isSearching else { return }
-        let opening = !expansion.checks.contains(turnID)
         toggle(turnID, in: \.checks)
-        // A pinned timeline follows its end; keep the opened row's header in view instead.
-        if opening { list.reveal(rowID: "checks:\(turnID)", rect: NSRect(x: 0, y: 0, width: 1, height: 24)) }
     }
     func timelineToggleGroup(_ groupID: String) { toggle(groupID, in: \.groups) }
     func timelineToggleEntry(_ itemID: String) { toggle(itemID, in: \.entries) }

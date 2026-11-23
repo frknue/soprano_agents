@@ -74,7 +74,7 @@ function pathLabel(path) {
   return h('span', { class: 'path' }, h('span', { class: 'path-base', text: base }), dir ? h('span', { class: 'path-dir', text: ` ${dir}` }) : null);
 }
 
-function fileChangeRow(item, change, index) {
+function fileChangeRow(turnID, item, change, index) {
   const running = item.status === 'running' || item.status === 'pending';
   const verbs = change.isFullContent ? ['Writing', 'Wrote'] : FILE_VERBS[change.kind] ?? FILE_VERBS.update;
   const verb = running ? verbs[0] : verbs[1];
@@ -92,7 +92,7 @@ function fileChangeRow(item, change, index) {
     stats,
   ];
   if (!change.diff) return h('div', { class: 'work-row' }, summary);
-  return fold(`${item.id}:${index}`, summary, () => {
+  return fold(`${turnID}:${item.id}:${index}`, summary, () => {
     if (change.isFullContent) {
       return renderDiffLines(change.diff.split('\n').map((text) => ({ type: 'ctx', text })), { plain: true });
     }
@@ -110,13 +110,13 @@ function statusChip(item, extra = null) {
   return extra ? h('span', { class: 'chip', text: extra }) : null;
 }
 
-function commandRow(item, command) {
+function commandRow(turnID, item, command) {
   const failed = command.exitCode != null && command.exitCode !== 0;
   const exit = command.exitCode == null ? null
     : h('span', { class: `chip ${failed ? 'chip-error' : 'chip-quiet'}`, text: `exit ${command.exitCode}` });
   const duration = command.durationMs != null && item.status !== 'running' ? h('span', { class: 'meta', text: turnDuration(command.durationMs) }) : null;
   const running = item.status === 'running' || item.status === 'pending';
-  return fold(item.id, [
+  return fold(`${turnID}:${item.id}`, [
     icon('terminal', { size: 16, cls: 'row-icon' }),
     h('code', { class: 'row-command', text: command.command }),
     running ? spinner('Running') : exit ?? statusChip(item),
@@ -134,7 +134,7 @@ function commandRow(item, command) {
 
 const TOOL_ICONS = { read: 'file', search: 'search', subagent: 'person', other: 'tool' };
 
-function toolRow(item, tool) {
+function toolRow(turnID, item, tool) {
   const hasBody = tool.input || tool.output;
   const summary = [
     icon(TOOL_ICONS[tool.category] ?? 'tool', { size: 16, cls: 'row-icon' }),
@@ -142,7 +142,7 @@ function toolRow(item, tool) {
     statusChip(item),
   ];
   if (!hasBody) return h('div', { class: 'work-row' }, summary);
-  return fold(item.id, summary, () => [
+  return fold(`${turnID}:${item.id}`, summary, () => [
     tool.input ? h('div', { class: 'fold-label', text: 'Input' }) : null,
     tool.input ? pre(tool.input) : null,
     tool.output ? h('div', { class: 'fold-label', text: 'Output' }) : null,
@@ -164,7 +164,7 @@ function approvalRow(request, open) {
       h('code', { class: 'row-command', text: request.detail })));
 }
 
-function userInputRow(item, request, open) {
+function userInputRow(turnID, item, request, open) {
   if (request.dismissed) {
     return h('div', { class: 'work-row' }, icon('question', { size: 16, cls: 'row-icon' }), h('span', { class: 'row-title muted', text: 'Questions dismissed' }));
   }
@@ -173,7 +173,7 @@ function userInputRow(item, request, open) {
     return h('div', { class: 'work-row' }, icon('question', { size: 16, cls: 'row-icon' }), h('span', { class: 'row-title muted', text: 'Questions not answered' }));
   }
   const count = request.questions.length;
-  return fold(item.id, [
+  return fold(`${turnID}:${item.id}`, [
     icon('question', { size: 16, cls: 'row-icon' }),
     h('span', { class: 'row-title', text: count === 1 ? `Answered: ${request.questions[0].header || request.questions[0].question}` : `Answered ${count} questions` }),
   ], () => h('dl', { class: 'answers' }, request.questions.map((q) => [
@@ -191,7 +191,7 @@ function advisoryCard(notes) {
       h('span', { text: note.text })))));
 }
 
-function renderItem(item, open) {
+function renderItem(turnID, item, open) {
   const { type, value } = itemKind(item);
   switch (type) {
     case 'assistantMessage':
@@ -202,15 +202,15 @@ function renderItem(item, open) {
       if (!value.text?.trim()) {
         return running ? h('div', { class: 'work-row thinking' }, icon('bulb', { size: 16, cls: 'row-icon' }), h('span', { class: 'shimmer', text: 'Thinking…' })) : null;
       }
-      return fold(item.id, [icon('bulb', { size: 16, cls: 'row-icon' }), h('span', { class: `row-title${running ? ' shimmer' : ''}`, text: running ? 'Thinking…' : 'Thinking' })],
+      return fold(`${turnID}:${item.id}`, [icon('bulb', { size: 16, cls: 'row-icon' }), h('span', { class: `row-title${running ? ' shimmer' : ''}`, text: running ? 'Thinking…' : 'Thinking' })],
         () => markdown(value.text, 'reasoning'), { cls: 'work' });
     }
     case 'command':
-      return commandRow(item, value);
+      return commandRow(turnID, item, value);
     case 'fileChange':
-      return h('div', { class: 'file-changes' }, (value ?? []).map((change, index) => fileChangeRow(item, change, index)));
+      return h('div', { class: 'file-changes' }, (value ?? []).map((change, index) => fileChangeRow(turnID, item, change, index)));
     case 'toolCall':
-      return toolRow(item, value);
+      return toolRow(turnID, item, value);
     case 'webSearch':
       return h('div', { class: 'work-row' }, icon('globe', { size: 16, cls: 'row-icon' }),
         h('span', { class: 'row-title' }, h('span', { class: 'verb', text: item.status === 'running' ? 'Searching ' : 'Searched ' }), h('span', { text: `“${value.query}”` })),
@@ -218,7 +218,7 @@ function renderItem(item, open) {
     case 'approval':
       return approvalRow(value, open);
     case 'userInput':
-      return userInputRow(item, value, open);
+      return userInputRow(turnID, item, value, open);
     case 'error':
       return h('div', { class: 'error-box', role: 'note' }, icon('alert', { size: 16 }), h('span', { text: value.message }));
     case 'notice':
@@ -283,7 +283,7 @@ function turnEntries(threadID, turn) {
     if (entry.item) {
       const { item } = entry;
       const open = turn.status === 'running';
-      entries.push({ key: `i:${item.id}`, sig: `${open}${JSON.stringify(item)}`, build: () => renderItem(item, open) ?? h('div', { hidden: true }) });
+      entries.push({ key: `i:${item.id}`, sig: `${open}${JSON.stringify(item)}`, build: () => renderItem(turn.id, item, open) ?? h('div', { hidden: true }) });
     } else {
       entries.push({ key: `s:${entry.steer.id}`, sig: JSON.stringify(entry.steer), build: () => userBubble(entry.steer, { label: 'Steered', steer: true }) });
     }

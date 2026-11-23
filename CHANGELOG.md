@@ -321,3 +321,7 @@ All notable changes to Soprano Agents are documented here. The format follows
   the terminal drawer (⌘J) in the project folder, and its Diff shows the uncommitted changes
   instead of "No patch available". Sending it as a "Current checkout" thread keeps those tabs and
   running terminals; only a new thread without a project still needs one first.
+- Clicking a thought (or work entry, group, or diff) in the timeline no longer jumps the viewport
+  to an earlier turn's thought or to the middle of the screen: timeline row and expansion keys are
+  now scoped per turn so repeated provider item IDs after a session restart never collide (desktop
+  and Phone PWA), and toggling a visible row keeps its header anchored right where you clicked it.

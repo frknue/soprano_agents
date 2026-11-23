@@ -9,7 +9,7 @@ struct WorkLogRowViewTests {
     private func command(_ id: String, output: String, status: TurnItemStatus) throws -> TimelineRow {
         let item = TurnItem(id: id, kind: .command(CommandExecution(command: "swift build", cwd: "/tmp", output: output)), status: status, startedAt: Date(timeIntervalSince1970: 0))
         let entry = try #require(WorkLog.entry(for: item))
-        return TimelineRow(id: "entry:\(id)", content: .workEntry(WorkEntryRowModel(entry: entry, displayLabel: nil, grouped: false, expanded: true)))
+        return TimelineRow(id: "entry:\(id)", content: .workEntry(WorkEntryRowModel(id: id, entry: entry, displayLabel: nil, grouped: false, expanded: true)))
     }
 
     private func window(showing view: NSView) -> NSWindow {

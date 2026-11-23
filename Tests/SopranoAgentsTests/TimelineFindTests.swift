@@ -31,6 +31,7 @@ struct TimelineFindTests {
             projectID: nil,
             modelSelection: ModelSelection(provider: .omp, model: "m"),
             turns: [Turn(
+                id: "t1",
                 ordinal: 1,
                 userMessage: UserMessage(id: "u", text: "Why does **login** loop?"),
                 modelSelection: ModelSelection(provider: .omp, model: "m"),
@@ -47,7 +48,7 @@ struct TimelineFindTests {
         let matches = TimelineFind.matches(of: "login", in: units)
         // The user message (bold markers gone), the answer's prose and its code block; the folded
         // command is not shown, so it is not found.
-        #expect(matches.map(\.rowID) == ["user:u", "assistant:a", "assistant:a"])
+        #expect(matches.map(\.rowID) == ["user:u", "assistant:t1:a", "assistant:t1:a"])
         #expect(matches[0].range == NSRange(location: 9, length: 5))
         #expect(matches.map(\.unit) == [0, 0, 1])
         #expect(TimelineFind.matches(of: "**", in: units).isEmpty)

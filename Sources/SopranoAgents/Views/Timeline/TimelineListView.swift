@@ -81,8 +81,22 @@ final class TimelineListView: NSView {
 
     // MARK: Rows
 
-    func setRows(_ newRows: [TimelineRow], scrollToEnd forceEnd: Bool = false) {
-        let anchor = forceEnd || isPinnedToBottom ? nil : currentAnchor()
+    func setRows(
+        _ newRows: [TimelineRow],
+        scrollToEnd forceEnd: Bool = false,
+        anchorRow: (before: String, after: String)? = nil
+    ) {
+        let pinnedAnchor: (id: String, delta: CGFloat)? = if !forceEnd, let anchorRow,
+            let clip = clipView, offsets.count == rows.count, heights.count == rows.count,
+            let index = rows.firstIndex(where: { $0.id == anchorRow.before }),
+            offsets[index] + heights[index] > clip.bounds.minY,
+            offsets[index] < clip.bounds.maxY
+        {
+            (anchorRow.after, clip.bounds.minY - offsets[index])
+        } else {
+            nil
+        }
+        let anchor = forceEnd || isPinnedToBottom || pinnedAnchor != nil ? nil : currentAnchor()
         // Unchanged rows keep their height without re-hashing their (possibly long) text.
         var previous: [String: (row: TimelineRow, height: CGFloat)] = [:]
         if abs(laneWidth - measuredWidth) < 0.5, heights.count == rows.count {
@@ -90,13 +104,28 @@ final class TimelineListView: NSView {
         }
         rows = newRows
         recomputeHeights(reusing: previous)
-        if forceEnd || isPinnedToBottom {
+        if let pinnedAnchor, let index = rows.firstIndex(where: { $0.id == pinnedAnchor.id }) {
+            let wasPinned = isPinnedToBottom
+            scroll(toY: offsets[index] + pinnedAnchor.delta)
+            if let clip = clipView {
+                let end = max(0, frame.height - clip.bounds.height)
+                setPinned(wasPinned && end - clip.bounds.minY <= 8)
+            }
+        } else if forceEnd || isPinnedToBottom {
             setPinned(true)
             scrollToEnd()
         } else if let anchor, let index = rows.firstIndex(where: { $0.id == anchor.id }) {
             scroll(toY: offsets[index] + anchor.delta)
         }
+        recordScrollPosition()
         tile()
+    }
+
+    /// Whether `rowID`'s frame currently intersects the clip view's visible bounds.
+    func isRowVisible(_ rowID: String) -> Bool {
+        guard let clip = clipView, offsets.count == rows.count, heights.count == rows.count,
+              let index = rows.firstIndex(where: { $0.id == rowID }) else { return false }
+        return offsets[index] + heights[index] > clip.bounds.minY && offsets[index] < clip.bounds.maxY
     }
 
     /// Re-configures every visible row (colors baked into rendered text changed).

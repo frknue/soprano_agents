@@ -1,8 +1,8 @@
 import Foundation
 import SopranoAgentsCore
 
-/// What the user opened or closed in the timeline. Ids are turn, group and item ids, unique
-/// across threads, so one value serves the whole window.
+/// What the user opened or closed in the timeline. Ids are turn ids, message ids, or turn-scoped
+/// group/item/diff keys, unique across turns and threads, so one value serves the whole window.
 ///
 /// `turns`, `groups` and `diffs` hold what the user toggled away from the work log's default:
 /// closed in the minimal work log, open in the detailed one (`detailed`). Read them through
@@ -12,9 +12,9 @@ struct TimelineExpansion: Hashable, Sendable {
     var turns: Set<String> = []
     /// Finished turns whose checks (advisor reviews, double-checks after the first answer) are open.
     var checks: Set<String> = []
-    /// Work groups (and live work rows) the user toggled.
+    /// Work groups (and live work rows) the user toggled (`WorkGroupRowModel.groupID`).
     var groups: Set<String> = []
-    /// Work entries showing their output.
+    /// Work entries showing their output (`WorkEntryRowModel.id`).
     var entries: Set<String> = []
     /// Long user messages shown in full.
     var messages: Set<String> = []
@@ -83,6 +83,8 @@ struct WorkGroupRowModel: Hashable, Sendable {
 }
 
 struct WorkEntryRowModel: Hashable, Sendable {
+    /// Turn-scoped expansion key (`"\(turn.id):\(entry.id)"`), unique across turns.
+    var id: String
     var entry: WorkLogEntry
     /// Replaces the entry's own label (single-entry groups use the group wording).
     var displayLabel: String?
@@ -260,8 +262,23 @@ enum TimelineBuilder {
         for queued in thread.queue {
             rows.append(TimelineRow(id: "queued:\(queued.id)", content: .queued(queued.message)))
         }
+        deduplicateIDs(&rows)
         applySpacing(&rows)
         return rows
+    }
+
+    /// Guarantees every row in a timeline has a distinct id even if persisted data repeats an id
+    /// within the same turn.
+    private static func deduplicateIDs(_ rows: inout [TimelineRow]) {
+        var counts: [String: Int] = [:]
+        for index in rows.indices {
+            let base = rows[index].id
+            let seen = counts[base, default: 0]
+            counts[base] = seen + 1
+            if seen > 0 {
+                rows[index].id = "\(base)#\(seen + 1)"
+            }
+        }
     }
 
     /// Fold label: "Worked for 3m 12s", "You stopped after 12s".
@@ -341,10 +358,12 @@ enum TimelineBuilder {
         var waitsOnUser = false
         var answered = false
 
+        func itemKey(_ id: String) -> String { "\(turn.id):\(id)" }
+
         func flushGroup(trailing: Bool) {
             guard !group.isEmpty else { return }
             defer { group = [] }
-            let groupID = "group:\(group[0].id)"
+            let groupID = "group:\(itemKey(group[0].id))"
             let expanded = expansion.isGroupOpen(groupID)
             if trailing, isRunning, let last = group.last, !last.isFailed {
                 let running = group.last { $0.isActive }
@@ -362,21 +381,23 @@ enum TimelineBuilder {
                     rows.append(TimelineRow(id: "live:\(turn.id)", content: .liveWork(LiveWorkRowModel(
                         groupID: groupID, entry: current, thought: thought, expanded: expanded, active: active
                     ))))
-                    if expanded { appendEntries(group, grouped: true, diffTurn: diffTurn, expansion: expansion, to: &rows) }
+                    if expanded { appendEntries(group, turnID: turn.id, grouped: true, diffTurn: diffTurn, expansion: expansion, to: &rows) }
                     return
                 }
             }
             if group.count == 1, group[0].isToolLike {
                 let entry = group[0]
                 if !entry.fileChanges.isEmpty {
-                    appendDiffs(of: entry, grouped: false, diffTurn: diffTurn, expansion: expansion, to: &rows)
+                    appendDiffs(of: entry, turnID: turn.id, grouped: false, diffTurn: diffTurn, expansion: expansion, to: &rows)
                     return
                 }
-                rows.append(TimelineRow(id: "entry:\(entry.id)", content: .workEntry(WorkEntryRowModel(
+                let key = itemKey(entry.id)
+                rows.append(TimelineRow(id: "entry:\(key)", content: .workEntry(WorkEntryRowModel(
+                    id: key,
                     entry: entry,
                     displayLabel: nil,
                     grouped: false,
-                    expanded: expansion.entries.contains(entry.id)
+                    expanded: expansion.entries.contains(key)
                 ))))
                 return
             }
@@ -389,7 +410,7 @@ enum TimelineBuilder {
                 expanded: expanded,
                 date: group[0].startedAt
             ))))
-            if expanded { appendEntries(group, grouped: true, diffTurn: diffTurn, expansion: expansion, to: &rows) }
+            if expanded { appendEntries(group, turnID: turn.id, grouped: true, diffTurn: diffTurn, expansion: expansion, to: &rows) }
         }
 
         for piece in pieces {
@@ -416,7 +437,7 @@ enum TimelineBuilder {
                         files = changedFiles
                         placedChangedFiles = true
                     }
-                    rows.append(TimelineRow(id: "assistant:\(item.id)", content: .assistant(AssistantRowModel(
+                    rows.append(TimelineRow(id: "assistant:\(itemKey(item.id))", content: .assistant(AssistantRowModel(
                         itemID: item.id,
                         text: text,
                         isStreaming: item.status.isActive && isRunning,
@@ -431,27 +452,28 @@ enum TimelineBuilder {
                     }
                 case let .error(message):
                     flushGroup(trailing: false)
-                    rows.append(TimelineRow(id: "error:\(item.id)", content: .error(message: message, date: item.startedAt)))
+                    rows.append(TimelineRow(id: "error:\(itemKey(item.id))", content: .error(message: message, date: item.startedAt)))
                 case let .notice(text):
                     flushGroup(trailing: false)
-                    rows.append(TimelineRow(id: "notice:\(item.id)", content: .notice(text: text)))
+                    rows.append(TimelineRow(id: "notice:\(itemKey(item.id))", content: .notice(text: text)))
                 case let .advisory(notes):
                     flushGroup(trailing: false)
                     // A review is not the agent working: an answer before it stays the last word.
                     answered = previousAnswered
                     for (index, note) in notes.enumerated() {
-                        rows.append(TimelineRow(id: "advisory:\(item.id):\(index)", content: .advisory(AdvisoryRowModel(note: note, date: item.startedAt))))
+                        rows.append(TimelineRow(id: "advisory:\(itemKey(item.id)):\(index)", content: .advisory(AdvisoryRowModel(note: note, date: item.startedAt))))
                     }
                 case let .approval(request) where request.decision == nil:
                     flushGroup(trailing: false)
                     if isRunning { waitsOnUser = true }
-                    rows.append(TimelineRow(id: "approval:\(item.id)", content: .approval(ApprovalRowModel(request: request))))
+                    rows.append(TimelineRow(id: "approval:\(itemKey(item.id))", content: .approval(ApprovalRowModel(request: request))))
                 case let .userInput(request):
                     flushGroup(trailing: false)
                     if isRunning, request.answers == nil, !request.dismissed { waitsOnUser = true }
                     if let entry = WorkLog.entry(for: item) {
-                        rows.append(TimelineRow(id: "entry:\(item.id)", content: .workEntry(WorkEntryRowModel(
-                            entry: entry, displayLabel: nil, grouped: false, expanded: expansion.entries.contains(item.id)
+                        let key = itemKey(item.id)
+                        rows.append(TimelineRow(id: "entry:\(key)", content: .workEntry(WorkEntryRowModel(
+                            id: key, entry: entry, displayLabel: nil, grouped: false, expanded: expansion.entries.contains(key)
                         ))))
                     }
                 default:
@@ -479,21 +501,22 @@ enum TimelineBuilder {
     }
 
     /// The steps of a work group: a diff row per changed file, an entry row for everything else.
-    private static func appendEntries(_ entries: [WorkLogEntry], grouped: Bool, diffTurn: Int?, expansion: TimelineExpansion, to rows: inout [TimelineRow]) {
+    private static func appendEntries(_ entries: [WorkLogEntry], turnID: String, grouped: Bool, diffTurn: Int?, expansion: TimelineExpansion, to rows: inout [TimelineRow]) {
         for entry in entries {
             if !entry.fileChanges.isEmpty {
-                appendDiffs(of: entry, grouped: grouped, diffTurn: diffTurn, expansion: expansion, to: &rows)
+                appendDiffs(of: entry, turnID: turnID, grouped: grouped, diffTurn: diffTurn, expansion: expansion, to: &rows)
                 continue
             }
-            rows.append(TimelineRow(id: "entry:\(entry.id)", content: .workEntry(WorkEntryRowModel(
-                entry: entry, displayLabel: nil, grouped: grouped, expanded: expansion.entries.contains(entry.id)
+            let key = "\(turnID):\(entry.id)"
+            rows.append(TimelineRow(id: "entry:\(key)", content: .workEntry(WorkEntryRowModel(
+                id: key, entry: entry, displayLabel: nil, grouped: grouped, expanded: expansion.entries.contains(key)
             ))))
         }
     }
 
-    private static func appendDiffs(of entry: WorkLogEntry, grouped: Bool, diffTurn: Int?, expansion: TimelineExpansion, to rows: inout [TimelineRow]) {
+    private static func appendDiffs(of entry: WorkLogEntry, turnID: String, grouped: Bool, diffTurn: Int?, expansion: TimelineExpansion, to rows: inout [TimelineRow]) {
         for (index, change) in entry.fileChanges.enumerated() {
-            let id = "\(entry.id):\(index)"
+            let id = "\(turnID):\(entry.id):\(index)"
             rows.append(TimelineRow(id: "diff:\(id)", content: .fileDiff(FileDiffRowModel(
                 id: id, change: change, status: entry.status, date: entry.startedAt,
                 expanded: expansion.isDiffOpen(id), grouped: grouped, turnOrdinal: diffTurn

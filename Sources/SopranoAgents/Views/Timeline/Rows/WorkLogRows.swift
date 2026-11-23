@@ -412,7 +412,7 @@ final class WorkEntryRowView: ClickableRowView {
         addSubview(bodyMarkdown)
         onToggle = { [weak self] in
             guard let self, let model, model.entry.canExpand else { return }
-            delegate?.timelineToggleEntry(model.entry.id)
+            delegate?.timelineToggleEntry(model.id)
         }
         applyPalette(palette)
     }
@@ -420,7 +420,7 @@ final class WorkEntryRowView: ClickableRowView {
     override func configure(_ row: TimelineRow) {
         super.configure(row)
         guard case let .workEntry(model) = row.content else { return }
-        if model.entry.id != self.model?.entry.id {
+        if model.id != self.model?.id {
             // Reused for another entry: its output starts at the top.
             bodyScroll.contentView.scroll(to: .zero)
             bodyScroll.reflectScrolledClipView(bodyScroll.contentView)
@@ -453,7 +453,7 @@ final class WorkEntryRowView: ClickableRowView {
         setAccessibilityLabel(entry.isFailed ? "\(model.displayLabel ?? entry.label), tool call failed" : (model.displayLabel ?? entry.label))
         onToggle = entry.canExpand ? { [weak self] in
             guard let self, let model = self.model else { return }
-            delegate?.timelineToggleEntry(model.entry.id)
+            delegate?.timelineToggleEntry(model.id)
         } : nil
         applyPalette(palette)
     }
