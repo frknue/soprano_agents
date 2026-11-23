@@ -163,6 +163,32 @@ public enum InteractionMode: String, Codable, Sendable, CaseIterable, Hashable {
     }
 }
 
+/// Optional OAuth metadata declared on an HTTP MCP server (for example in `~/.omp/agent/mcp.json`).
+public struct MCPOAuthConfig: Codable, Sendable, Hashable {
+    public var clientID: String?
+    public var clientSecret: String?
+    public var redirectURI: String?
+    public var scope: String?
+    public var tokenURL: String?
+    public var authorizationURL: String?
+
+    public init(
+        clientID: String? = nil,
+        clientSecret: String? = nil,
+        redirectURI: String? = nil,
+        scope: String? = nil,
+        tokenURL: String? = nil,
+        authorizationURL: String? = nil
+    ) {
+        self.clientID = clientID
+        self.clientSecret = clientSecret
+        self.redirectURI = redirectURI
+        self.scope = scope
+        self.tokenURL = tokenURL
+        self.authorizationURL = authorizationURL
+    }
+}
+
 /// OS-agnostic MCP server definition passed to provider sessions (stdio or HTTP/SSE).
 public struct MCPServerSpec: Codable, Sendable, Hashable, Identifiable {
     public enum Transport: Codable, Sendable, Hashable {
@@ -173,10 +199,12 @@ public struct MCPServerSpec: Codable, Sendable, Hashable, Identifiable {
     public var id: String { name }
     public var name: String
     public var transport: Transport
+    public var oauth: MCPOAuthConfig?
 
-    public init(name: String, transport: Transport) {
+    public init(name: String, transport: Transport, oauth: MCPOAuthConfig? = nil) {
         self.name = name
         self.transport = transport
+        self.oauth = oauth
     }
 }
 

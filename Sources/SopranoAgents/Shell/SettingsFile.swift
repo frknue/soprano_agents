@@ -133,9 +133,11 @@ enum SettingsFile {
           },
 
           "resources": {
+            // Automatically share ~/.omp/agent (AGENTS.md, RULES.md, rules/, skills/, commands/,
+            // and mcp.json including OAuth tokens) with all other agents.
+            "includeOmp": true,
             // Extra folders scanned for shared AGENTS.md, RULES.md, rules/, skills/, commands/, mcp.json
-            // (in addition to ~/.config/soprano-agents, ~/.agents/skills and project overrides).
-            // Example: ["~/.omp/agent"]
+            // (in addition to ~/.omp/agent, ~/.config/soprano-agents, ~/.agents/skills and project overrides).
             "extraDirectories": [],
             // Additional mcp.json files to merge into every provider session.
             "importMcpFiles": [],

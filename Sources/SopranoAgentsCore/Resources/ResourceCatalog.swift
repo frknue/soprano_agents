@@ -5,24 +5,28 @@ import Foundation
 /// `mcpServers`, and project-local overrides. Foundation-only and OS-agnostic.
 public enum ResourceCatalog {
     /// Discovers and merges resources in precedence order (later overrides earlier by name):
-    /// 1. `~/.config/soprano-agents` (Soprano Agents global)
+    /// 1. `~/.omp/agent` (omp global workflows & MCPs when `settings.includeOmp` is true)
     /// 2. `~/.agents` (cross-agent shared skills)
-    /// 3. `settings.extraDirectories` (e.g. `~/.omp/agent`)
-    /// 4. `cwd` project overrides (`.soprano-agents/`, `.agents/`, `.mcp.json`)
-    /// 5. `settings.importMcpFiles` and inline `settings.mcpServers` (highest precedence for MCPs)
+    /// 3. `~/.config/soprano-agents` (Soprano Agents global)
+    /// 4. `settings.extraDirectories`
+    /// 5. `cwd` project overrides (`.soprano-agents/`, `.agents/`, `.mcp.json`)
+    /// 6. `settings.importMcpFiles` and inline `settings.mcpServers` (highest precedence for MCPs)
     public static func discover(
         cwd: String? = nil,
         settings: ResourceSettings = ResourceSettings(),
         home: String = NSHomeDirectory(),
         configRoot: String? = nil
     ) -> ResolvedResources {
+        let ompRoot = (home as NSString).appendingPathComponent(".omp/agent")
         let sopranoRoot = configRoot ?? (home as NSString).appendingPathComponent(".config/soprano-agents")
         let sharedAgentsRoot = (home as NSString).appendingPathComponent(".agents")
 
-        var roots: [(path: String, source: ResourceSource)] = [
-            (sopranoRoot, .soprano),
-            (sharedAgentsRoot, .shared),
-        ]
+        var roots: [(path: String, source: ResourceSource)] = []
+        if settings.includeOmp {
+            roots.append((ompRoot, .omp))
+        }
+        roots.append((sharedAgentsRoot, .shared))
+        roots.append((sopranoRoot, .soprano))
         for dir in settings.extraDirectories {
             let expanded = expand(dir, home: home)
             if !roots.contains(where: { standardized($0.path) == standardized(expanded) }) {
@@ -107,10 +111,46 @@ public enum ResourceCatalog {
                 guard settings.trustProjectMcp else { return nil }
                 if reservedBuiltInMCPNames.contains(entry.spec.name) { return nil }
             }
-            if provider == .omp, let origin = entry.originPath, standardized(origin).hasPrefix(ompRoot + "/") {
-                return nil
+            if provider == .omp {
+                if entry.source == .omp { return nil }
+                if let origin = entry.originPath, standardized(origin).hasPrefix(ompRoot + "/") {
+                    return nil
+                }
             }
             return entry.spec
+        }
+    }
+
+    /// Rewrites HTTP MCP servers that require omp OAuth tokens (or custom headers for Antigravity,
+    /// whose `mcp_config.json` does not accept HTTP headers) into stdio `SopranoAgents mcp
+    /// http-proxy` entries so every non-omp provider gets authenticated, auto-refreshing access.
+    public static func resolveProxyTransports(
+        _ specs: [MCPServerSpec],
+        for provider: ProviderKind,
+        executablePath: String?,
+        includeOmpOAuth: Bool,
+        ompDatabasePath: String?
+    ) -> [MCPServerSpec] {
+        guard provider != .omp, let executablePath, !executablePath.isEmpty else { return specs }
+        let store = includeOmpOAuth ? ompDatabasePath.map { OmpMCPOAuthStore(databasePath: $0) } : nil
+        return specs.map { spec in
+            guard case let .http(url, headers) = spec.transport else { return spec }
+            let hasOmpOAuth = spec.oauth != nil || (store?.hasCredential(for: url) == true)
+            let needsProxy = hasOmpOAuth || (provider == .antigravity && !headers.isEmpty)
+            guard needsProxy else { return spec }
+
+            var args = ["mcp", "http-proxy", "--url", url]
+            if hasOmpOAuth, let ompDatabasePath, !ompDatabasePath.isEmpty {
+                args += ["--omp-db", ompDatabasePath]
+            }
+            var env: [String: String] = [:]
+            if !headers.isEmpty {
+                env["SOPRANO_MCP_HEADERS_JSON"] = JSONValue.object(headers.mapValues(JSONValue.string)).jsonString()
+            }
+            return MCPServerSpec(
+                name: spec.name,
+                transport: .stdio(command: executablePath, args: args, env: env)
+            )
         }
     }
 
@@ -130,14 +170,14 @@ public enum ResourceCatalog {
         var sections: [String] = []
 
         let filteredInstructions = resources.instructions.filter { item in
-            !(isOmp && standardized(item.originRoot) == ompRoot)
+            !(isOmp && (item.source == .omp || standardized(item.originRoot) == ompRoot))
         }
         for item in filteredInstructions {
             sections.append(item.text)
         }
 
         let filteredRules = resources.rules.filter { rule in
-            !(isOmp && standardized(rule.originRoot) == ompRoot)
+            !(isOmp && (rule.source == .omp || standardized(rule.originRoot) == ompRoot))
         }
         if !filteredRules.isEmpty {
             let block = filteredRules.map { "## Rule: \($0.name)\n\($0.body)" }.joined(separator: "\n\n")
@@ -145,7 +185,7 @@ public enum ResourceCatalog {
         }
 
         let filteredSkills = resources.skills.filter { skill in
-            !(isOmp && standardized(skill.originRoot) == ompRoot)
+            !(isOmp && (skill.source == .omp || standardized(skill.originRoot) == ompRoot))
         }
         if !filteredSkills.isEmpty {
             let lines = filteredSkills.map { skill -> String in
@@ -276,7 +316,17 @@ public enum ResourceCatalog {
                 specs.append(MCPServerSpec(name: name, transport: .stdio(command: command, args: args, env: env)))
             } else if let url = entry["url"]?.nonEmptyString ?? entry["serverUrl"]?.nonEmptyString {
                 let headers = (entry["headers"]?.objectValue ?? entry["httpHeaders"]?.objectValue ?? [:]).compactMapValues(\.stringValue)
-                specs.append(MCPServerSpec(name: name, transport: .http(url: url, headers: headers)))
+                let oauth: MCPOAuthConfig? = entry["oauth"]?.objectValue.map { obj in
+                    MCPOAuthConfig(
+                        clientID: obj["clientId"]?.nonEmptyString ?? obj["client_id"]?.nonEmptyString,
+                        clientSecret: obj["clientSecret"]?.nonEmptyString ?? obj["client_secret"]?.nonEmptyString,
+                        redirectURI: obj["redirectUri"]?.nonEmptyString ?? obj["redirect_uri"]?.nonEmptyString,
+                        scope: obj["scope"]?.nonEmptyString,
+                        tokenURL: obj["tokenUrl"]?.nonEmptyString ?? obj["token_url"]?.nonEmptyString,
+                        authorizationURL: obj["authorizationUrl"]?.nonEmptyString ?? obj["authorization_url"]?.nonEmptyString
+                    )
+                }
+                specs.append(MCPServerSpec(name: name, transport: .http(url: url, headers: headers), oauth: oauth))
             }
         }
         return specs

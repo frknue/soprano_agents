@@ -6,7 +6,7 @@ import SopranoAgentsCore
 enum MCPCommand {
     static func run(arguments: [String]) -> Never {
         guard let subcommand = arguments.first else {
-            fputs("Usage: SopranoAgents mcp <browser|team>\n", stderr)
+            fputs("Usage: SopranoAgents mcp <browser|team|http-proxy>\n", stderr)
             exit(2)
         }
         let rest = Array(arguments.dropFirst())
@@ -15,10 +15,52 @@ enum MCPCommand {
             runBrowser(arguments: rest)
         case "team":
             runTeam(arguments: rest)
+        case "http-proxy":
+            runHTTPProxy(arguments: rest)
         default:
             fputs("Unknown mcp subcommand: \(subcommand)\n", stderr)
             exit(2)
         }
+    }
+
+    private static func runHTTPProxy(arguments: [String]) -> Never {
+        var rawURL: String?
+        var ompDBPath: String?
+        var index = 0
+        while index < arguments.count {
+            switch arguments[index] {
+            case "--url":
+                index += 1
+                if index < arguments.count { rawURL = arguments[index] }
+            case "--omp-db":
+                index += 1
+                if index < arguments.count { ompDBPath = arguments[index] }
+            default:
+                break
+            }
+            index += 1
+        }
+        guard let rawURL, let url = URL(string: rawURL) else {
+            fputs("Usage: SopranoAgents mcp http-proxy --url <http(s)://...> [--omp-db <path>]\n", stderr)
+            exit(2)
+        }
+        var headers: [String: String] = [:]
+        if let rawHeaders = ProcessInfo.processInfo.environment["SOPRANO_MCP_HEADERS_JSON"],
+           let parsed = try? JSONValue.parse(rawHeaders),
+           let dict = parsed.objectValue {
+            headers = dict.compactMapValues(\.stringValue)
+        }
+        let semaphore = DispatchSemaphore(value: 0)
+        Task {
+            await MCPHTTPProxyStdioRunner.run(
+                url: url,
+                staticHeaders: headers,
+                ompDatabasePath: ompDBPath
+            )
+            semaphore.signal()
+        }
+        semaphore.wait()
+        exit(0)
     }
 
     private static func runTeam(arguments: [String]) -> Never {

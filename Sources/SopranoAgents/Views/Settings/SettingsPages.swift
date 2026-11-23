@@ -332,6 +332,9 @@ extension SettingsController {
             if paths.isEmpty { self?.remove(["resources", "importMcpFiles"]) } else { self?.write(paths, at: ["resources", "importMcpFiles"]) }
         }
 
+        let includeOmp = form.toggle(settings.resources.includeOmp, label: "Include omp workflows & MCPs") { [weak self] isOn in
+            self?.write(isOn, at: ["resources", "includeOmp"])
+        }
         let injectInstructions = form.toggle(settings.resources.injectInstructions, label: "Share instructions & skills") { [weak self] isOn in
             self?.write(isOn, at: ["resources", "injectInstructions"])
         }
@@ -346,8 +349,14 @@ extension SettingsController {
         var sections: [NSView] = [
             form.section("Shared sources", [
                 form.row(
+                    "Include omp workflows & MCPs",
+                    description: "Automatically share ~/.omp/agent instructions, rules, commands, skills, and mcp.json (including OAuth tokens) with Antigravity, Codex, Claude Code, and OpenCode.",
+                    reset: reset(["resources", "includeOmp"], isDefault: settings.resources.includeOmp == defaults.resources.includeOmp),
+                    control: includeOmp
+                ),
+                form.row(
                     "Extra folders",
-                    description: "Additional folders scanned for AGENTS.md, RULES.md, rules/, skills/, commands/ and mcp.json (besides ~/.config/soprano-agents, ~/.agents/skills and project overrides). Separate with commas.",
+                    description: "Additional folders scanned for AGENTS.md, RULES.md, rules/, skills/, commands/ and mcp.json (besides ~/.omp/agent, ~/.config/soprano-agents, ~/.agents/skills and project overrides). Separate with commas.",
                     reset: reset(["resources", "extraDirectories"], isDefault: settings.resources.extraDirectories.isEmpty),
                     control: extraDirs
                 ),

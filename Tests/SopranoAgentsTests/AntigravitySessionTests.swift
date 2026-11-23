@@ -160,7 +160,7 @@ struct AntigravitySessionTests {
 
     private func session(_ fake: Fake, interruptGrace: Duration = .seconds(5)) -> AntigravitySession {
         let executable = fake.executable
-        return AntigravitySession(executablePath: { executable }, profile: fake.profile, interruptGrace: interruptGrace)
+        return AntigravitySession(executablePath: { executable }, profile: fake.profile, interruptGrace: interruptGrace, mcpWarmupDelay: .zero)
     }
 
     private func config(_ fake: Fake, model: String = ModelSelection.configuredDefaultModel, runtime: RuntimeMode = .approvalRequired, resumeID: String? = nil) -> SessionConfig {
@@ -395,5 +395,25 @@ struct AntigravitySessionTests {
             try await session.rollback(beforeTurn: 1, providerTurnID: "antigravity-turn-1")
         }
         await session.close()
+    }
+
+    @Test func startingWritesResolvedMCPServersToProfileMCPConfigJSON() async throws {
+        let fake = try makeFake()
+        let session = session(fake)
+        var sessionConfig = config(fake)
+        sessionConfig.mcpServers = [
+            MCPServerSpec(name: "asana", transport: .stdio(command: "/app/SopranoAgents", args: ["mcp", "http-proxy", "--url", "https://mcp.asana.com/v2/mcp"])),
+            MCPServerSpec(name: "knip", transport: .stdio(command: "npx", args: ["-y", "@knip/mcp"], env: ["PATH": "/opt/homebrew/bin"])),
+        ]
+        _ = try await session.start(sessionConfig)
+        await session.close()
+
+        let mcpPath = AntigravityProtocol.mcpConfigPath(profile: fake.profile)
+        let text = try String(contentsOfFile: mcpPath, encoding: .utf8)
+        let parsed = try JSONValue.parse(text)
+        let servers = parsed["mcpServers"]?.objectValue ?? [:]
+        #expect(servers["asana"]?["command"]?.stringValue == "/app/SopranoAgents")
+        #expect(servers["knip"]?["command"]?.stringValue == "npx")
+        #expect(servers["knip"]?["env"]?["PATH"]?.stringValue == "/opt/homebrew/bin")
     }
 }

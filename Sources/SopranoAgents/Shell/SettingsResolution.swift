@@ -189,9 +189,12 @@ enum SettingsResolver {
         }
 
         if let resources = section("resources", in: root, warn: warn) {
-            let known: Set<String> = ["extraDirectories", "importMcpFiles", "injectInstructions", "injectMcp", "trustProjectMcp"]
+            let known: Set<String> = ["includeOmp", "extraDirectories", "importMcpFiles", "injectInstructions", "injectMcp", "trustProjectMcp"]
             for key in resources.keys.sorted() where !known.contains(key) {
                 warn("Unknown setting \"resources.\(key)\".")
+            }
+            if let value = resources["includeOmp"] {
+                if let flag = value as? Bool { result.settings.resources.includeOmp = flag } else { warn("resources.includeOmp must be true or false.") }
             }
             if let value = resources["extraDirectories"] {
                 if let entries = value as? [Any], entries.allSatisfy({ $0 is String }) {

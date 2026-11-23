@@ -31,6 +31,11 @@ public enum AntigravityProtocol {
         (profile as NSString).appendingPathComponent("\(appDataDirectory)/antigravity-oauth-token")
     }
 
+    /// Global MCP config file that `agy acp` reads at startup (`<profile>/config/mcp_config.json`).
+    public static func mcpConfigPath(profile: String) -> String {
+        (profile as NSString).appendingPathComponent("config/mcp_config.json")
+    }
+
     public static func isSignedIn(profile: String) -> Bool {
         FileManager.default.fileExists(atPath: tokenPath(profile: profile))
     }
@@ -99,6 +104,27 @@ public enum AntigravityProtocol {
     static func shellQuoted(_ value: String) -> String {
         if value.allSatisfy({ $0.isLetter || $0.isNumber || "-_./:=".contains($0) }), !value.isEmpty { return value }
         return "'\(value.replacingOccurrences(of: "'", with: "'\\''"))'"
+    }
+
+    /// Serializes `MCPServerSpec` items into Antigravity's `config/mcp_config.json` schema.
+    public static func mcpConfigJSON(_ specs: [MCPServerSpec]) -> JSONValue {
+        var mapped: [String: JSONValue] = [:]
+        for spec in specs {
+            switch spec.transport {
+            case let .stdio(command, args, env):
+                var entry: [String: JSONValue] = [
+                    "command": .string(command),
+                    "args": .array(args.map(JSONValue.string)),
+                ]
+                if !env.isEmpty {
+                    entry["env"] = .object(env.mapValues(JSONValue.string))
+                }
+                mapped[spec.name] = .object(entry)
+            case let .http(url, _):
+                mapped[spec.name] = ["url": .string(url)]
+            }
+        }
+        return ["mcpServers": .object(mapped)]
     }
 
     /// Serializes `MCPServerSpec` items into ACP v1's `mcpServers` parameter array.

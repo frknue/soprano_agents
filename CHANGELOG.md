@@ -330,3 +330,9 @@ All notable changes to Soprano Agents are documented here. The format follows
   to an earlier turn's thought or to the middle of the screen: timeline row and expansion keys are
   now scoped per turn so repeated provider item IDs after a session restart never collide (desktop
   and Phone PWA), and toggling a visible row keeps its header anchored right where you clicked it.
+- Antigravity, Codex, Claude Code, and OpenCode sessions now automatically inherit your `~/.omp/agent`
+  workflows (`AGENTS.md`, `RULES.md`, `rules/`, `commands/`, `skills/`, and `mcp.json`, toggleable
+  via `resources.includeOmp` in **Settings › Resources & MCP**). OAuth-authenticated HTTP MCP servers
+  configured in `omp` (such as Asana) are bridged through a built-in `SopranoAgents mcp http-proxy`
+  that reads and refreshes tokens from `~/.omp/agent/agent.db`, and Antigravity sessions now write
+  their resolved MCP servers to `<profile>/config/mcp_config.json` where `agy acp` loads them.

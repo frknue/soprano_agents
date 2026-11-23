@@ -35,6 +35,7 @@ public actor AntigravitySession: ProviderSession {
     static let requestTimeout: TimeInterval = 30
     private let interruptGrace: Duration
     private let backgroundSettleDelay: Duration
+    private let mcpWarmupDelay: Duration
 
     private struct PendingPermission {
         var rpcID: JSONValue
@@ -76,12 +77,14 @@ public actor AntigravitySession: ProviderSession {
         executablePath: @escaping @Sendable () -> String? = { nil },
         profile: String,
         interruptGrace: Duration = .seconds(5),
-        backgroundSettleDelay: Duration = .seconds(3)
+        backgroundSettleDelay: Duration = .seconds(3),
+        mcpWarmupDelay: Duration = .milliseconds(2500)
     ) {
         self.executablePath = executablePath
         self.profile = profile
         self.interruptGrace = interruptGrace
         self.backgroundSettleDelay = backgroundSettleDelay
+        self.mcpWarmupDelay = mcpWarmupDelay
         (events, continuation) = AsyncStream.makeStream(of: ProviderEvent.self, bufferingPolicy: .unbounded)
     }
 
@@ -99,6 +102,7 @@ public actor AntigravitySession: ProviderSession {
         }
         self.config = config
         mapper = AntigravityEventMapper(cwd: config.cwd)
+        writeMCPConfig(config.mcpServers)
         let process = LineProcess(LineProcess.Configuration(
             executable: executable,
             arguments: AntigravityProtocol.arguments(profile: profile),
@@ -121,6 +125,12 @@ public actor AntigravitySession: ProviderSession {
             try requireOpen()
             sessionID = id
             try await apply(config.modelSelection, mode: config.runtimeMode)
+            // `agy acp` discovers MCP server tools asynchronously after `session/new`. Give it a
+            // brief window on session startup when MCP servers are configured so Turn 1 sees them.
+            if !config.mcpServers.isEmpty, mcpWarmupDelay > .zero {
+                try? await Task.sleep(for: mcpWarmupDelay)
+                try requireOpen()
+            }
             continuation.yield(.conversationID(id))
             return id
         } catch {
@@ -131,24 +141,44 @@ public actor AntigravitySession: ProviderSession {
         }
     }
 
+    /// Writes `<profile>/config/mcp_config.json` (`0600`) so `agy acp` loads the resolved MCP
+    /// servers at startup (`agy acp` 1.5.x ignores `mcpServers` passed inside `session/new`).
+    private func writeMCPConfig(_ servers: [MCPServerSpec]) {
+        let path = AntigravityProtocol.mcpConfigPath(profile: profile)
+        let url = URL(fileURLWithPath: path)
+        let dir = url.deletingLastPathComponent()
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let json = AntigravityProtocol.mcpConfigJSON(servers).prettyJSONString() + "\n"
+        try? Data(json.utf8).write(to: url, options: .atomic)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path)
+    }
+
     /// Loads `resumeID` or creates a session; reads its config options.
     private func open(_ client: AcpClient, config: SessionConfig, initialized: JSONValue) async throws -> String {
         let mcpServers = AntigravityProtocol.mcpServers(config.mcpServers)
+        let systemPromptAppend: String? = if let file = config.systemPromptFile,
+            initialized["agentCapabilities"]?["_meta"]?["antigravity"]?["systemPrompt"]?["append"]?.boolValue == true,
+            let text = try? String(contentsOfFile: file, encoding: .utf8), !text.isEmpty
+        {
+            text
+        } else {
+            nil
+        }
         if let resume = config.resumeID {
             isLoading = true
             defer { isLoading = false }
-            let params: JSONValue = ["sessionId": .string(resume), "cwd": .string(config.cwd), "mcpServers": mcpServers]
-            if let loaded = try? await client.request("session/load", params) {
+            var params: [String: JSONValue] = ["sessionId": .string(resume), "cwd": .string(config.cwd), "mcpServers": mcpServers]
+            if let systemPromptAppend {
+                params["_meta"] = ["antigravity": ["systemPrompt": ["append": .string(systemPromptAppend)]]]
+            }
+            if let loaded = try? await client.request("session/load", .object(params)) {
                 read(loaded["configOptions"], isNew: false)
                 return resume
             }
         }
         var params: [String: JSONValue] = ["cwd": .string(config.cwd), "mcpServers": mcpServers]
-        if let file = config.systemPromptFile,
-           initialized["agentCapabilities"]?["_meta"]?["antigravity"]?["systemPrompt"]?["append"]?.boolValue == true,
-           let text = try? String(contentsOfFile: file, encoding: .utf8), !text.isEmpty
-        {
-            params["_meta"] = ["antigravity": ["systemPrompt": ["append": .string(text)]]]
+        if let systemPromptAppend {
+            params["_meta"] = ["antigravity": ["systemPrompt": ["append": .string(systemPromptAppend)]]]
         }
         let created = try await client.request("session/new", .object(params))
         guard let id = created["sessionId"]?.nonEmptyString else {

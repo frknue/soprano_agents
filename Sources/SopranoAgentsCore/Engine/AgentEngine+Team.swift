@@ -118,17 +118,26 @@ extension AgentEngine {
     func sessionConfig(for thread: AgentThread) throws -> SessionConfig {
         let cwd = workingDirectory(for: thread)
         let provider = thread.modelSelection.provider
+        let home = environment.resourceHome ?? NSHomeDirectory()
         let resources = resolvedResources(forDirectory: cwd)
+        let rawMCPServers = ResourceCatalog.mcpServers(from: resources, for: provider, settings: settings.resources, home: home)
+        let resolvedMCPServers = ResourceCatalog.resolveProxyTransports(
+            rawMCPServers,
+            for: provider,
+            executablePath: environment.executablePath,
+            includeOmpOAuth: settings.resources.includeOmp && environment.resourceHome != nil,
+            ompDatabasePath: environment.resourceHome.map { OmpMCPOAuthStore.defaultDatabasePath(home: $0) }
+        )
         var config = SessionConfig(
             cwd: cwd,
             modelSelection: thread.modelSelection,
             runtimeMode: thread.runtimeMode,
             resumeID: thread.providerThreadID,
-            mcpServers: ResourceCatalog.mcpServers(from: resources, for: provider, settings: settings.resources)
+            mcpServers: resolvedMCPServers
         )
 
         var promptParts: [String] = []
-        if let sharedAppendix = ResourceCatalog.systemPromptAppendix(from: resources, for: provider, settings: settings.resources) {
+        if let sharedAppendix = ResourceCatalog.systemPromptAppendix(from: resources, for: provider, settings: settings.resources, home: home) {
             promptParts.append(sharedAppendix)
         }
 

@@ -55,8 +55,9 @@ struct ResourceCatalogTests {
         {"mcpServers":{"local-api":{"url":"http://127.0.0.1:4000/mcp"},"soprano-team":{"command":"/bin/evil"}}}
         """)
 
+        // By default (`includeOmp == true`), `~/.omp/agent` is discovered automatically without
+        // needing `extraDirectories`.
         let untrustedSettings = ResourceSettings(
-            extraDirectories: ["~/.omp/agent"],
             mcpServers: [MCPServerSpec(name: "inline-tool", transport: .stdio(command: "/bin/tool"))]
         )
         let resolved = ResourceCatalog.discover(cwd: project.path, settings: untrustedSettings, home: home.path)
@@ -66,8 +67,18 @@ struct ResourceCatalogTests {
         #expect(resolved.skills.first { $0.name == "deploy" }?.source == .project)
         #expect(resolved.skills.first { $0.name == "deploy" }?.description == "Project-specific deploy override")
         #expect(resolved.commands.map(\.name) == ["ship"])
+        #expect(resolved.commands.first?.source == .omp)
         #expect(resolved.rules.map(\.name) == ["no-force-push"])
         #expect(resolved.mcpServers.map(\.spec.name) == ["asana", "inline-tool", "local-api", "soprano-team"])
+        #expect(resolved.mcpServers.first { $0.spec.name == "asana" }?.source == .omp)
+
+        // Opting out via `includeOmp = false` excludes `~/.omp/agent`.
+        var noOmpSettings = untrustedSettings
+        noOmpSettings.includeOmp = false
+        let withoutOmp = ResourceCatalog.discover(cwd: project.path, settings: noOmpSettings, home: home.path)
+        #expect(withoutOmp.commands.isEmpty)
+        #expect(withoutOmp.rules.isEmpty)
+        #expect(!withoutOmp.mcpServers.contains { $0.spec.name == "asana" })
 
         // By default (`trustProjectMcp == false`), repository-local MCP servers are NOT injected.
         let defaultAgyMCP = ResourceCatalog.mcpServers(from: resolved, for: .antigravity, settings: untrustedSettings, home: home.path)
@@ -82,12 +93,15 @@ struct ResourceCatalogTests {
         #expect(agyMCP.map(\.name) == ["asana", "inline-tool", "local-api"])
         #expect(ompMCP.map(\.name) == ["inline-tool", "local-api"])
 
-        // Antigravity ACP serialization matches ACP v1 spec.
+        // Antigravity ACP serialization matches ACP v1 spec, and `mcpConfigJSON` matches `mcp_config.json`.
         let acpArray = AntigravityProtocol.mcpServers(agyMCP).arrayValue ?? []
         #expect(acpArray.count == 3)
         #expect(acpArray[0]["name"]?.stringValue == "asana")
         #expect(acpArray[2]["type"]?.stringValue == "http")
         #expect(acpArray[2]["url"]?.stringValue == "http://127.0.0.1:4000/mcp")
+        let agyConfig = AntigravityProtocol.mcpConfigJSON(agyMCP)["mcpServers"]?.objectValue ?? [:]
+        #expect(agyConfig["asana"]?["command"]?.stringValue == "bun")
+        #expect(agyConfig["local-api"]?["url"]?.stringValue == "http://127.0.0.1:4000/mcp")
 
         // System prompt appendix includes rules and skills index for Antigravity, skips omp-originated rules for omp.
         let agyPrompt = try #require(ResourceCatalog.systemPromptAppendix(from: resolved, for: .antigravity, settings: untrustedSettings, home: home.path))

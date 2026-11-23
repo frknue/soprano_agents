@@ -5,8 +5,13 @@ import Foundation
 /// box with zero personal hardcoding, while letting power users point at existing agent folders
 /// (such as `~/.omp/agent` or a dotfiles checkout).
 public struct ResourceSettings: Sendable, Hashable {
+    /// Automatically include `~/.omp/agent` (omp's `AGENTS.md`, `RULES.md`, `rules/`, `skills/`,
+    /// `commands/`, and `mcp.json`) so omp workflows and MCP servers are shared with every other
+    /// agent in Soprano Agents. Enabled by default.
+    public var includeOmp: Bool
     /// Additional root directories scanned for `AGENTS.md`, `RULES.md`, `rules/`, `skills/`,
-    /// `commands/`, `agents/` and `mcp.json` (after `~/.config/soprano-agents` and `~/.agents`).
+    /// `commands/`, `agents/` and `mcp.json` (after `~/.omp/agent`, `~/.agents`, and
+    /// `~/.config/soprano-agents`).
     public var extraDirectories: [String]
     /// Additional `mcp.json` files imported and merged into the shared MCP server list.
     public var importMcpFiles: [String]
@@ -22,6 +27,7 @@ public struct ResourceSettings: Sendable, Hashable {
     public var trustProjectMcp: Bool
 
     public init(
+        includeOmp: Bool = true,
         extraDirectories: [String] = [],
         importMcpFiles: [String] = [],
         mcpServers: [MCPServerSpec] = [],
@@ -29,6 +35,7 @@ public struct ResourceSettings: Sendable, Hashable {
         injectMcp: Bool = true,
         trustProjectMcp: Bool = false
     ) {
+        self.includeOmp = includeOmp
         self.extraDirectories = extraDirectories
         self.importMcpFiles = importMcpFiles
         self.mcpServers = mcpServers
@@ -40,6 +47,7 @@ public struct ResourceSettings: Sendable, Hashable {
 
 /// Where a shared resource was discovered.
 public enum ResourceSource: String, Sendable, Hashable {
+    case omp = "omp"
     case soprano = "Soprano"
     case shared = "Shared"
     case custom = "Custom"
