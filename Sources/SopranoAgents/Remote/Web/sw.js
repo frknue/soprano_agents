@@ -1,7 +1,7 @@
 // Service worker: app shell cache (network first, so a new app version shows at once), vendor files
 // cache first, /api/* never cached; push notifications that open their thread.
 
-const CACHE = 'soprano-agents-shell-v1';
+const CACHE = 'soprano-agents-shell-v2';
 
 const SHELL = [
   '/',

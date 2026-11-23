@@ -21,6 +21,7 @@ final class RemoteAPI {
     private var dirtyProjects = false
     private var dirtyProviders = false
     private var dirtyThreads: Set<String> = []
+    private var dirtySideQuestions: Set<String> = []
     private var dirtyItems: [String: (threadID: String, turnID: String)] = [:]
     private var flush: Task<Void, Never>?
     private var ping: Task<Void, Never>?
@@ -163,6 +164,31 @@ final class RemoteAPI {
             if let pinned = body.pinned { engine.setPinned(id, pinned) }
             if let settled = body.settled { engine.setSettled(id, settled) }
             if let archived = body.archived { engine.setArchived(id, archived) }
+            if let interactionMode = body.interactionMode { engine.setInteractionMode(id, interactionMode) }
+            return .response(.noContent)
+        }
+        if let p = route.match("GET", "threads/:id/side-questions") {
+            let id = try thread(p[0]).id
+            try? await engine.loadSideQuestions(id)
+            return .response(.json(SideQuestionsBody(
+                threadID: id,
+                sideQuestions: engine.sideQuestions(id),
+                starting: engine.isStartingSideQuestion(id)
+            )))
+        }
+        if let p = route.match("POST", "threads/:id/side-questions") {
+            let body = try decode(SideQuestionBody.self, request)
+            let id = try thread(p[0]).id
+            let topicID = try await engine.askSideQuestion(id, question: body.question, topicID: body.topicID)
+            return .response(.json(SideQuestionAskResponse(
+                topicID: topicID,
+                sideQuestions: engine.sideQuestions(id),
+                starting: engine.isStartingSideQuestion(id)
+            )))
+        }
+        if let p = route.match("POST", "threads/:id/side-questions/cancel") {
+            let id = try thread(p[0]).id
+            _ = await engine.cancelSideQuestion(id)
             return .response(.noContent)
         }
         if let p = route.match("POST", "threads/:id/visited") {
@@ -332,6 +358,7 @@ final class RemoteAPI {
         var attachments: [String]?
         var model: ModelSelection?
         var runtimeMode: RuntimeMode?
+        var interactionMode: InteractionMode?
         var workspace: Workspace?
     }
 
@@ -353,6 +380,7 @@ final class RemoteAPI {
             projectID: body.projectID,
             modelSelection: body.model ?? project?.defaultModel ?? engine.settings.defaultModel,
             runtimeMode: body.runtimeMode ?? engine.settings.defaultRuntimeMode,
+            interactionMode: body.interactionMode ?? .standard,
             workspace: workspace
         )
         let attachments = try pendingAttachments(body.attachments)
@@ -424,6 +452,24 @@ final class RemoteAPI {
         var pinned: Bool?
         var settled: Bool?
         var archived: Bool?
+        var interactionMode: InteractionMode?
+    }
+
+    private struct SideQuestionBody: Decodable {
+        var question: String
+        var topicID: String?
+    }
+
+    private struct SideQuestionsBody: Encodable {
+        var threadID: String
+        var sideQuestions: [SideQuestion]
+        var starting: Bool
+    }
+
+    private struct SideQuestionAskResponse: Encodable {
+        var topicID: String
+        var sideQuestions: [SideQuestion]
+        var starting: Bool
     }
 
     private struct MessageBody: Decodable {
@@ -534,6 +580,7 @@ final class RemoteAPI {
         var projects: [Project]
         var threads: [ThreadSummary]
         var providers: [ProviderStatus]
+        var planModeProviders: [ProviderKind]
         var defaults: Defaults
         var runtimeModes: [RuntimeModeInfo]
         var host: String
@@ -545,6 +592,7 @@ final class RemoteAPI {
             projects: engine.projects,
             threads: summaries(),
             providers: providerStatuses,
+            planModeProviders: ProviderKind.allCases.filter(\.capabilities.supportsPlanMode),
             defaults: .init(model: engine.settings.defaultModel, runtimeMode: engine.settings.defaultRuntimeMode),
             runtimeModes: RuntimeMode.allCases.map { .init(id: $0.rawValue, title: $0.title, summary: $0.summary) },
             host: Host.current().localizedName ?? "Mac",
@@ -596,7 +644,9 @@ final class RemoteAPI {
             dirtyProjects = true
         case .providersChanged:
             dirtyProviders = true
-        case .commandsChanged, .subagentChanged, .sideQuestionsChanged:
+        case let .sideQuestionsChanged(threadID):
+            dirtySideQuestions.insert(threadID)
+        case .commandsChanged, .subagentChanged:
             return
         }
         scheduleFlush()
@@ -623,6 +673,13 @@ final class RemoteAPI {
         if dirtyProviders { events.append(("providers", ["providers": providerStatuses])) }
         if dirtyList { events.append(("threads", ["threads": summaries()])) }
         for threadID in dirtyThreads.sorted() { events.append(("thread", ["threadID": threadID])) }
+        for threadID in dirtySideQuestions.sorted() {
+            events.append(("sideQuestions", SideQuestionsBody(
+                threadID: threadID,
+                sideQuestions: engine.sideQuestions(threadID),
+                starting: engine.isStartingSideQuestion(threadID)
+            )))
+        }
         for (itemID, location) in dirtyItems where !dirtyThreads.contains(location.threadID) {
             guard let item = engine.thread(location.threadID)?.turns.first(where: { $0.id == location.turnID })?.items.first(where: { $0.id == itemID }) else { continue }
             events.append(("item", ItemEvent(threadID: location.threadID, turnID: location.turnID, item: item)))
@@ -631,6 +688,7 @@ final class RemoteAPI {
         dirtyProjects = false
         dirtyProviders = false
         dirtyThreads.removeAll()
+        dirtySideQuestions.removeAll()
         dirtyItems.removeAll()
         for stream in streams {
             for (name, value) in events { stream.send(name, value) }

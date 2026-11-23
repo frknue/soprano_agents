@@ -4,20 +4,21 @@ import { del, enc, patch, post } from '../api.js';
 import { attachmentTray } from '../attachments.js';
 import { actionSheet, copyText, h, icon, iconButton, toast, toastError } from '../dom.js';
 import { approvalCard, questionCard } from '../cards.js';
-import { activeTurn, modelLabel, openTurn, pendingApproval, pendingUserInput, projectTitle } from '../model.js';
+import { renderMarkdown } from '../markdown.js';
+import { activeTurn, modelLabel, openTurn, pendingApproval, pendingUserInput, projectTitle, supportsPlanMode } from '../model.js';
 import { go, threadHash } from '../nav.js';
-import { openThread, refreshThread, store, summaryFor } from '../store.js';
+import { loadSideQuestions, openThread, refreshThread, store, summaryFor } from '../store.js';
 import { renderTimeline } from '../timeline.js';
 import { failure, loading, statusPill, topbar } from './common.js';
 
 const DRAFT_PREFIX = 'soprano.draft.';
 const MODE_KEY = 'soprano.runningMode';
 
-function composer(threadID) {
+function composer(threadID, { onSideQuestion }) {
   const field = h('textarea', {
     class: 'composer-field',
     rows: 1,
-    placeholder: 'Message',
+    placeholder: 'Message (or /btw …)',
     'aria-label': 'Message',
     enterkeyhint: 'send',
     value: sessionStorage.getItem(DRAFT_PREFIX + threadID) ?? '',
@@ -35,6 +36,28 @@ function composer(threadID) {
     return button;
   });
   const modeSwitch = h('div', { class: 'segmented small', role: 'radiogroup', 'aria-label': 'While the agent works' }, modeButtons);
+
+  let interactionMode = 'default';
+  let planSupported = false;
+  const planButtons = [['default', 'Build'], ['plan', 'Plan']].map(([value, label]) => {
+    const button = h('button', { type: 'button', role: 'radio', 'aria-checked': String(interactionMode === value), text: label });
+    button.addEventListener('click', async () => {
+      if (interactionMode === value) return;
+      const previous = interactionMode;
+      interactionMode = value;
+      planButtons.forEach((b, i) => b.setAttribute('aria-checked', String(['default', 'plan'][i] === interactionMode)));
+      try {
+        await patch(`/api/threads/${enc(threadID)}`, { interactionMode: value });
+      } catch (error) {
+        interactionMode = previous;
+        planButtons.forEach((b, i) => b.setAttribute('aria-checked', String(['default', 'plan'][i] === interactionMode)));
+        toastError(error, 'Mode');
+      }
+    });
+    return button;
+  });
+  const planSwitch = h('div', { class: 'segmented small', role: 'radiogroup', 'aria-label': 'Interaction mode', hidden: true }, planButtons);
+
   let running = false;
   let stopping = false;
   let sending = false;
@@ -44,7 +67,7 @@ function composer(threadID) {
     attachments.tray,
     field,
     attachments.input,
-    h('div', { class: 'composer-bar' }, attachments.button, modeSwitch, h('span', { class: 'spacer' }), stop, send));
+    h('div', { class: 'composer-bar' }, attachments.button, planSwitch, modeSwitch, h('span', { class: 'spacer' }), stop, send));
 
   const grow = () => {
     field.style.height = 'auto';
@@ -59,12 +82,22 @@ function composer(threadID) {
     stop.disabled = stopping;
     stop.setAttribute('aria-label', stopping ? 'Stopping' : 'Stop');
     modeSwitch.hidden = !running;
+    planSwitch.hidden = !planSupported || running;
   }
 
   const submit = async () => {
     const text = field.value.trim();
     const ids = attachments.ids();
     if ((!text && !ids.length) || sending || attachments.busy()) return;
+    if (!ids.length && (text === '/btw' || /^\/btw\s+/i.test(text))) {
+      const question = text.replace(/^\/btw\s*/i, '').trim();
+      field.value = '';
+      sessionStorage.removeItem(DRAFT_PREFIX + threadID);
+      grow();
+      sync();
+      onSideQuestion(question);
+      return;
+    }
     sending = true;
     sync();
     try {
@@ -123,6 +156,12 @@ function composer(threadID) {
       stopping = Boolean(stopRequested);
       sync();
     },
+    setPlanMode(supported, value) {
+      planSupported = Boolean(supported);
+      interactionMode = value === 'plan' ? 'plan' : 'default';
+      planButtons.forEach((b, i) => b.setAttribute('aria-checked', String(['default', 'plan'][i] === interactionMode)));
+      sync();
+    },
     destroy() {
       attachments.destroy();
     },
@@ -133,7 +172,41 @@ export function mountThread(root, { id }) {
   const timeline = h('div', { class: 'timeline' });
   const scroller = h('main', { class: 'scroll thread-scroll' }, h('div', { class: 'lane' }, timeline));
   const pending = h('div', { class: 'pending' });
-  const compose = composer(id);
+  const sideHost = h('div', { class: 'side-host' });
+  let sideOpen = false;
+  let sideInput = null;
+  let sideBusy = false;
+
+  const askSide = async (question, topicID = null) => {
+    const trimmed = String(question ?? '').trim();
+    if (!trimmed || sideBusy) return;
+    sideOpen = true;
+    sideBusy = true;
+    renderSideQuestions();
+    try {
+      const body = topicID ? { question: trimmed, topicID } : { question: trimmed };
+      const res = await post(`/api/threads/${enc(id)}/side-questions`, body);
+      store.sideQuestions.set(id, { items: res.sideQuestions ?? [], starting: Boolean(res.starting) });
+    } catch (error) {
+      toastError(error, 'Side question');
+    } finally {
+      sideBusy = false;
+      renderSideQuestions();
+    }
+  };
+
+  const openSidePanel = (initialQuestion = '') => {
+    sideOpen = true;
+    loadSideQuestions(id);
+    if (initialQuestion) {
+      askSide(initialQuestion);
+    } else {
+      renderSideQuestions();
+      requestAnimationFrame(() => sideInput?.focus());
+    }
+  };
+
+  const compose = composer(id, { onSideQuestion: openSidePanel });
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
   const toBottom = h('button', {
     type: 'button',
@@ -143,7 +216,7 @@ export function mountThread(root, { id }) {
     hidden: true,
     onclick: () => scroller.scrollTo({ top: scroller.scrollHeight, behavior: reduceMotion.matches ? 'auto' : 'smooth' }),
   }, icon('arrowDown', { size: 20 }));
-  const dock = h('div', { class: 'dock' }, toBottom, pending, compose.el);
+  const dock = h('div', { class: 'dock' }, toBottom, sideHost, pending, compose.el);
   const headerHost = h('div');
   const screen = h('div', { class: 'screen thread' }, headerHost, scroller, dock);
   root.replaceChildren(screen);
@@ -185,6 +258,7 @@ export function mountThread(root, { id }) {
     const teammate = Boolean(store.thread?.thread?.teammate);
     const setFlag = (body, done) => patch(`/api/threads/${enc(id)}`, body).then(done).catch((error) => toastError(error));
     actionSheet(summary?.title ?? 'Thread', [
+      { label: 'Side questions (/btw)', icon: 'note', onSelect: () => openSidePanel() },
       { label: 'Diff', icon: 'diff', onSelect: () => go(threadHash(id, 'diff')) },
       { label: 'Git', icon: 'branch', onSelect: () => go(threadHash(id, 'git')) },
       { label: 'Terminal', icon: 'terminal', onSelect: () => go(threadHash(id, 'terminal')) },
@@ -193,6 +267,76 @@ export function mountThread(root, { id }) {
       { label: 'Archive', icon: 'archive', disabled: teammate, destructive: true, onSelect: () => setFlag({ archived: true }, () => { toast('Thread archived'); go('#/', { replace: true }); }) },
     ]);
   };
+
+  function renderSideQuestions() {
+    const entry = store.sideQuestions.get(id) ?? { items: [], starting: false };
+    const items = entry.items ?? [];
+    const running = entry.starting || items.some((q) => {
+      const latest = q.followUps?.length ? q.followUps[q.followUps.length - 1] : q.first;
+      return latest?.status === 'running';
+    });
+    if (!sideOpen) {
+      sideHost.replaceChildren();
+      return;
+    }
+    const list = h('div', { class: 'side-list' });
+    if (!items.length && !running) {
+      list.append(h('p', { class: 'side-empty', text: 'Ask a side question without steering the agent.' }));
+    } else {
+      for (const topic of items.slice(0, 3)) {
+        const exchanges = [topic.first, ...(topic.followUps ?? [])];
+        const card = h('div', { class: 'side-topic' });
+        for (const ex of exchanges) {
+          card.append(h('div', { class: 'side-q', text: ex.question }));
+          if (ex.answer) {
+            const ans = h('div', { class: 'side-a md' });
+            ans.innerHTML = renderMarkdown(ex.answer);
+            card.append(ans);
+          } else if (ex.status === 'running') {
+            card.append(h('div', { class: 'side-status shimmer', text: 'Thinking…' }));
+          }
+          if (ex.error) card.append(h('div', { class: 'side-error', text: ex.error }));
+        }
+        list.append(card);
+      }
+    }
+    const input = h('input', {
+      type: 'text',
+      class: 'side-input',
+      placeholder: items.length ? 'Ask a follow-up or new /btw…' : 'Ask a side question…',
+      disabled: running || sideBusy,
+    });
+    sideInput = input;
+    const askBtn = h('button', { type: 'submit', class: 'button primary small', text: 'Ask', disabled: running || sideBusy });
+    const cancelBtn = running
+      ? h('button', {
+        type: 'button',
+        class: 'button small',
+        text: 'Stop',
+        onclick: () => post(`/api/threads/${enc(id)}/side-questions/cancel`).catch((error) => toastError(error)),
+      })
+      : null;
+    const form = h('form', { class: 'side-form' }, input, cancelBtn, askBtn);
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const q = input.value.trim();
+      if (!q) return;
+      input.value = '';
+      askSide(q, items[0]?.id ?? null);
+    });
+    const closeBtn = h('button', {
+      type: 'button',
+      class: 'side-close',
+      'aria-label': 'Close side questions',
+      text: 'Done',
+      onclick: () => { sideOpen = false; renderSideQuestions(); },
+    });
+    const panel = h('div', { class: 'side-panel' },
+      h('div', { class: 'side-head' }, h('span', { text: 'Side questions (/btw)' }), closeBtn),
+      list,
+      form);
+    sideHost.replaceChildren(panel);
+  }
 
   const renderHeader = () => {
     const thread = store.thread?.thread;
@@ -250,6 +394,7 @@ export function mountThread(root, { id }) {
     renderPending(thread);
     const active = activeTurn(thread);
     compose.setRunning(Boolean(active), active?.stopRequestedAt);
+    compose.setPlanMode(supportsPlanMode(thread.modelSelection?.provider, store.state), thread.interactionMode);
     if (firstRender || wasAtBottom) {
       scroller.scrollTop = scroller.scrollHeight;
       atBottom = true;
@@ -281,6 +426,7 @@ export function mountThread(root, { id }) {
   return {
     update(topic) {
       if (topic === 'thread' || topic === 'state') render();
+      if (topic === 'sideQuestions') renderSideQuestions();
     },
     destroy() {
       resizeObserver.disconnect();

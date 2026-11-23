@@ -11,13 +11,15 @@ export const store = {
   threadError: null,
   /** threadID → [{id, threadID, title, running}] from `terminals` events. */
   terminals: new Map(),
+  /** threadID → { items: [SideQuestion], starting: boolean } from `/side-questions` and SSE. */
+  sideQuestions: new Map(),
   /** 'connecting' | 'open' | 'closed' */
   connection: 'connecting',
 };
 
 const listeners = new Set();
 
-/** fn(topic): 'state' | 'thread' | 'terminals' | 'connection'. Returns an unsubscribe function. */
+/** fn(topic): 'state' | 'thread' | 'terminals' | 'sideQuestions' | 'connection'. Returns an unsubscribe function. */
 export function subscribe(fn) {
   listeners.add(fn);
   return () => listeners.delete(fn);
@@ -82,6 +84,17 @@ export function openThread(id) {
   return refreshThread();
 }
 
+export async function loadSideQuestions(id) {
+  if (!id) return;
+  try {
+    const body = await get(`/api/threads/${enc(id)}/side-questions`);
+    store.sideQuestions.set(id, { items: body.sideQuestions ?? [], starting: Boolean(body.starting) });
+    emit('sideQuestions');
+  } catch {
+    // Best-effort load.
+  }
+}
+
 function findTurn(thread, turnID) {
   const turn = thread.turns.find((t) => t.id === turnID);
   if (turn) return turn;
@@ -142,6 +155,10 @@ export function applyEvent(name, data) {
       store.terminals.set(data.threadID, data.terminals);
       emit('terminals');
       break;
+    case 'sideQuestions':
+      store.sideQuestions.set(data.threadID, { items: data.sideQuestions ?? [], starting: Boolean(data.starting) });
+      emit('sideQuestions');
+      break;
     default:
       break;
   }
@@ -159,4 +176,5 @@ export function resetStore() {
   store.thread = null;
   store.threadError = null;
   store.terminals.clear();
+  store.sideQuestions.clear();
 }

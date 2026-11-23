@@ -107,10 +107,22 @@ export const DECISION_PAST = {
   cancel: 'Cancelled',
 };
 
-const PROVIDER_NAMES = { omp: 'omp', opencode: 'OpenCode' };
+const PROVIDER_NAMES = {
+  omp: 'omp',
+  codex: 'Codex',
+  claude: 'Claude Code',
+  antigravity: 'Antigravity',
+  opencode: 'OpenCode',
+};
 
 export function providerName(kind) {
   return PROVIDER_NAMES[kind] ?? kind;
+}
+
+export function supportsPlanMode(kind, state) {
+  if (!kind) return false;
+  if (Array.isArray(state?.planModeProviders)) return state.planModeProviders.includes(kind);
+  return kind === 'codex' || kind === 'claude';
 }
 
 /** Short model label for a ModelSelection, using the provider catalog's display name when known. */

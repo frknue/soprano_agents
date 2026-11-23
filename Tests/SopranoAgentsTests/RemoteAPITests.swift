@@ -260,6 +260,31 @@ struct RemoteAPITests {
         throw RemoteTestError(message: "No free port")
     }
 
+    @Test func planModeAndSideQuestionsWorkOverRemoteAPI() async throws {
+        let f = fixture()
+        let state = json(response(await f.api.handle(request("GET", "/api/state", token: f.token))))
+        let planProviders = state["planModeProviders"] as? [String] ?? []
+        #expect(planProviders.contains("codex"))
+        #expect(planProviders.contains("claude"))
+
+        let patched = response(await f.api.handle(request("PATCH", "/api/threads/\(f.threadID)", token: f.token, body: #"{"interactionMode":"plan"}"#)))
+        #expect(patched?.status == 204)
+        #expect(f.engine.thread(f.threadID)?.interactionMode == .plan)
+
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        f.engine.restoreSideQuestions([
+            SideQuestion(id: "sq-1", first: SideQuestionExchange(question: "Why?", answer: "Because.", status: .complete, createdAt: now)),
+        ], threadID: f.threadID, persist: false)
+        let fetched = response(await f.api.handle(request("GET", "/api/threads/\(f.threadID)/side-questions", token: f.token)))
+        #expect(fetched?.status == 200)
+        let list = json(fetched)["sideQuestions"] as? [[String: Any]] ?? []
+        #expect(list.count == 1)
+        #expect(list.first?["id"] as? String == "sq-1")
+
+        let cancelled = response(await f.api.handle(request("POST", "/api/threads/\(f.threadID)/side-questions/cancel", token: f.token)))
+        #expect(cancelled?.status == 204)
+    }
+
     private func eventLines(port: Int, path: String, token: String) async throws -> AsyncLineSequence<URLSession.AsyncBytes> {
         var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)\(path)")!)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")

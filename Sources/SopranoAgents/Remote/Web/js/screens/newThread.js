@@ -3,7 +3,7 @@
 import { enc, get, post } from '../api.js';
 import { attachmentTray } from '../attachments.js';
 import { h, spinner, toastError } from '../dom.js';
-import { providerName } from '../model.js';
+import { providerName, supportsPlanMode } from '../model.js';
 import { go, threadHash } from '../nav.js';
 import { store } from '../store.js';
 import { loading, topbar } from './common.js';
@@ -81,6 +81,30 @@ export function mountNewThread(root) {
     runtime.addEventListener('change', syncRuntimeHint);
     syncRuntimeHint();
 
+    let interactionMode = 'default';
+    const interactionButtons = [['default', 'Build'], ['plan', 'Plan']].map(([value, label]) => {
+      const button = h('button', { type: 'button', role: 'radio', 'aria-checked': String(value === interactionMode), text: label });
+      button.addEventListener('click', () => {
+        interactionMode = value;
+        interactionButtons.forEach((b) => b.setAttribute('aria-checked', String(b === button)));
+      });
+      return button;
+    });
+    const interactionField = h('div', { class: 'form-field' },
+      h('span', { class: 'form-label', id: 'interaction-label', text: 'Mode' }),
+      h('div', { class: 'segmented', role: 'radiogroup', 'aria-labelledby': 'interaction-label' }, interactionButtons),
+      h('p', { class: 'form-hint', text: 'Plan mode designs changes before editing code.' }));
+    const syncInteractionMode = () => {
+      const provider = selectionFor.get(model.value)?.provider;
+      const supported = supportsPlanMode(provider, state);
+      interactionField.hidden = !supported;
+      if (!supported) {
+        interactionMode = 'default';
+        interactionButtons.forEach((b, i) => b.setAttribute('aria-checked', String(i === 0)));
+      }
+    };
+    model.addEventListener('change', syncInteractionMode);
+
     let workspaceKind = 'projectRoot';
     const workspaceButtons = [['projectRoot', 'Current checkout'], ['newWorktree', 'New worktree']].map(([value, label]) => {
       const button = h('button', { type: 'button', role: 'radio', 'aria-checked': String(value === workspaceKind), text: label });
@@ -141,6 +165,7 @@ export function mountNewThread(root) {
     project.addEventListener('change', () => {
       branchesFor = null;
       applyDefaultModel();
+      syncInteractionMode();
       syncWorkspace();
     });
 
@@ -148,6 +173,7 @@ export function mountNewThread(root) {
       field('Project', project),
       field('Model', model, unavailable ? h('p', { class: 'form-hint error-text', text: 'No provider is ready on the Mac.' }) : null),
       field('Permissions', runtime, runtimeHint),
+      interactionField,
       workspaceField,
       branchField,
       h('div', { class: 'form-field' },
@@ -176,6 +202,7 @@ export function mountNewThread(root) {
           text: text.value.trim(),
           model: selection,
           runtimeMode: runtime.value,
+          interactionMode: interactionField.hidden ? 'default' : interactionMode,
           workspace,
         };
         if (ids.length) body.attachments = ids;
@@ -192,6 +219,7 @@ export function mountNewThread(root) {
     });
 
     applyDefaultModel();
+    syncInteractionMode();
     syncWorkspace();
     syncStart();
     body.replaceChildren(h('div', { class: 'lane' }, form));

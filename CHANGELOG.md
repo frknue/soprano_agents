@@ -39,6 +39,10 @@ All notable changes to Soprano Agents are documented here. The format follows
     `/review-with <provider>[/<model>] [focus]` in any thread to review its diff with another
     provider and attach an advisory card, or opt into automatic post-turn advisor reviews
     (`workflows.advisorEnabled`) and turn recaps (`workflows.autoRecapEnabled`).
+  - **Phone PWA parity**: clean display names for all 5 providers (`omp`, Codex, Claude Code,
+    Antigravity, OpenCode), Build / Plan mode toggle in New Thread and the thread composer
+    (`PATCH /api/threads/:id`), and live Side Questions (`/btw`) panel & composer shortcut
+    (`/api/threads/:id/side-questions` + SSE streaming).
   - **Unified Usage Statistics**: completed and failed turns across all 5 providers are recorded in
     a local JSONL ledger (`usage-ledger.jsonl`) and merged with `omp`'s `stats.db` (deduplicated)
     in the Statistics board (`⇧⌘U`).
